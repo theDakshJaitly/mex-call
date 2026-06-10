@@ -1,0 +1,8 @@
+[
+  {
+    "name": "mex-call-activity",
+    "description": "Live mex-call meeting activity (compactions, decisions, \"Mex, …\" wake triggers, replies)",
+    "command": "tail -n +1 -F \"${CLAUDE_PROJECT_DIR}/.mex/meetings/live/activity.log\" 2>/dev/null",
+    "when": "on-skill-invoke:call"
+  }
+]

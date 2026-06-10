@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'cd \"$CLAUDE_PLUGIN_ROOT\" 2>/dev/null || exit 0; [ -d node_modules ] || npm install --silent >/dev/null 2>&1; [ -f dist/cli.js ] || npm run build >/dev/null 2>&1; exit 0'"
+          }
+        ]
+      }
+    ]
+  }
+}

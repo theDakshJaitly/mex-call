@@ -1,0 +1,12 @@
+{
+  "name": "mex-call",
+  "description": "The mex-call meeting notetaker bot for Google Meet.",
+  "owner": { "name": "Daksh Jaitly" },
+  "plugins": [
+    {
+      "name": "mex-call",
+      "source": ".",
+      "description": "Notetaker bot for Google Meet → structured, agent-readable memory in your repo. Joins, transcribes, compacts a bounded rolling memory, and acts on the \"Mex, …\" wake phrase."
+    }
+  ]
+}

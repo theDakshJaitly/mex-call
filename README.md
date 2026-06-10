@@ -65,21 +65,38 @@ The bot joins as **Mex (notetaker)**, posts a pinned consent message, and writes
 live memory as people talk. `Ctrl-C` (or `mex-call leave`) makes it leave and
 archives the call.
 
-### `/mex-call <meet-link>` — launch from inside Claude Code
+### From inside Claude Code
 
-Install the slash command once (works in any repo), and `npm link` so the CLI is
-global:
+Put your Recall key somewhere mex-call will find it in any repo:
 
 ```bash
-npm link                                  # global `mex-call` binary
-cp .claude/commands/mex-call.md ~/.claude/commands/   # the /mex-call command
-echo "RECALL_API_KEY=..." > ~/.mex-call.env           # key, picked up in any repo
+echo "RECALL_API_KEY=..." > ~/.mex-call.env
 ```
 
-Then from inside Claude Code in any repo: `/mex-call https://meet.google.com/abc-defg-hij`.
-The runtime launches in the background and your session becomes a **live dashboard** —
-status, participants, rolling summary, decisions/actions, and every "Mex, …" trigger
-and reply. The runtime pre-renders the dashboard, so refreshing it costs no model calls.
+**As a plugin (recommended — ships the how-to skill + a live-stream monitor):**
+
+```
+/plugin marketplace add theDakshJaitly/mex-call     # or a local path during dev
+/plugin install mex-call@mex-call
+```
+
+A `SessionStart` hook builds the bundled CLI on first run, so nothing else to set
+up. Then in any repo: `/mex-call:call https://meet.google.com/abc-defg-hij`. The
+runtime launches in the background, the session becomes a **live dashboard**
+(status, participants, rolling summary, decisions/actions, and every "Mex, …"
+trigger + reply), and the plugin's background monitor streams each new event into
+the session as it happens. The runtime pre-renders the dashboard, so it costs no
+model calls. Claude also gains a model-invoked `meeting-notetaker` skill so it
+knows when to suggest mex-call.
+
+**Standalone (clean `/mex-call` name, no plugin):**
+
+```bash
+npm link                                              # global `mex-call` binary
+cp .claude/commands/mex-call.md ~/.claude/commands/   # the /mex-call command
+```
+
+Then: `/mex-call https://meet.google.com/abc-defg-hij`.
 
 ### `mex-call watch` / `mex-call leave`
 
@@ -123,7 +140,7 @@ Claude Code auth is used for the brain — no `ANTHROPIC_API_KEY` required.
 - **MVP 0 ✅** Local memory engine (`simulate`).
 - **MVP 1 ✅** Recall listener (`join`) — joins, consent, live transcript, participants, archive. Rate-limited Recall client.
 - **MVP 2 ✅** Active loop — wake phrase "Mex, …" → Claude reads live memory (+ repo `.mex/` context) → answers or logs a decision/action-item → chat reply. Passive loop keeps running throughout.
-- **MVP 3 ✅** `/mex-call <link>` slash command launches the runtime; the session becomes a live, model-free dashboard. Plus `mex-call watch` (terminal) and `mex-call leave`.
+- **MVP 3 ✅** `/mex-call <link>` launches the runtime; the session becomes a live, model-free dashboard. Plus `mex-call watch` (terminal) and `mex-call leave`. Packaged as a Claude Code **plugin** (model-invoked how-to skill, user-only launcher, live-stream monitor, self-installing build hook) installable via a marketplace.
 - **MVP 4** Repo actions (create issue, update docs, follow-ups).
 
 ## License

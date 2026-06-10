@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# mex-call CLI launcher for the Claude Code plugin: runs the bundled dist build.
+# Resolves the plugin root as the parent of this bin/ directory.
+DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+if [ ! -f "$DIR/dist/cli.js" ]; then
+  echo "mex-call: build missing — run 'npm install && npm run build' in $DIR" >&2
+  exit 1
+fi
+exec node "$DIR/dist/cli.js" "$@"
