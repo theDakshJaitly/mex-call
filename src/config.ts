@@ -3,6 +3,19 @@ export const VERSION = "0.1.0";
 /** The bot/brand/wake phrase. Deliberately fixed — do not rename (see build doc). */
 export const WAKE_WORD = "mex";
 
+/**
+ * Wake matches. "Mex" is an uncommon word that live STT routinely mishears, so
+ * we also trigger on its frequent mis-transcriptions and let the brain's
+ * `addressed` judgement reject anything not actually directed at the bot.
+ *
+ * WAKE_WORDS match anywhere in the utterance (word-boundary). LEADING_WAKE_WORDS
+ * are generic words ("next") that we only treat as the wake word when they START
+ * the utterance — since "Mex, …" is always said first — so mid-sentence "what's
+ * next" doesn't fire, but a misheard "next, summarize…" does.
+ */
+export const WAKE_WORDS = ["mex", "max", "mix", "mux", "mecks", "meks", "macks", "maex"];
+export const LEADING_WAKE_WORDS = ["next", "nex"];
+
 export interface MexCallConfig {
   /** Repo the conversation is about. Memory is written under <repoRoot>/.mex/meetings/. */
   repoRoot: string;

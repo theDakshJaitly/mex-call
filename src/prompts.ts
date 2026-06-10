@@ -125,6 +125,11 @@ ${bullets(i.actionItems)}
 == OPEN_QUESTIONS_SO_FAR ==
 ${bullets(i.openQuestions)}
 ${repoBlock}
+Your name "Mex" is frequently mis-transcribed by live speech-to-text (e.g.
+"max", "mecks", "next", "mux"). When one of those appears and the speaker is
+clearly addressing the AI notetaker, treat it as your name. If it's clearly a
+real person's name or unrelated speech, set addressed=false.
+
 The line that addressed you (from ${i.speaker}):
 "${i.utterance}"
 
