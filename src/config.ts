@@ -33,10 +33,14 @@ export interface MexCallConfig {
   summarizerModel: string;
   /** Model alias for the active loop (user-facing replies on the wake phrase). */
   activeModel: string;
+  /** Model alias for the tool-enabled action brain (in-call repo actions). */
+  actionModel: string;
   /** Soft target length for the rolling summary, in words. Keeps it bounded. */
   summaryTargetWords: number;
   /** Per-call timeout for brain invocations. */
   brainTimeoutMs: number;
+  /** Per-call timeout for the action brain — agentic repo work needs longer. */
+  actionTimeoutMs: number;
 }
 
 export const DEFAULT_CONFIG: Omit<MexCallConfig, "repoRoot" | "callName"> = {
@@ -44,9 +48,22 @@ export const DEFAULT_CONFIG: Omit<MexCallConfig, "repoRoot" | "callName"> = {
   compactionIntervalMs: 45_000,
   summarizerModel: "sonnet",
   activeModel: "sonnet",
+  actionModel: "sonnet",
   summaryTargetWords: 350,
   brainTimeoutMs: 120_000,
+  actionTimeoutMs: 300_000,
 };
+
+/** Tools the action brain may use, in the repo, for in-call actions (MVP 4). */
+export const ACTION_ALLOWED_TOOLS = [
+  "Read",
+  "Write",
+  "Edit",
+  "Grep",
+  "Glob",
+  "Bash(gh *)",
+  "Bash(git *)",
+];
 
 // --- Recall / meeting transport (MVP 1) --------------------------------------
 

@@ -11,8 +11,11 @@ export interface ClaudeCodeBrainOptions {
   /**
    * Extra CLI args. The passive loop needs no tools (pure text → JSON), so we
    * default to giving it none — cheaper, faster, and it can't touch files.
+   * The MVP 4 action brain overrides this with an allow-list of repo tools.
    */
   extraArgs?: string[];
+  /** Working directory for the invocation. The action brain runs in the repo. */
+  cwd?: string;
 }
 
 /**
@@ -26,12 +29,14 @@ export class ClaudeCodeBrain implements Brain {
   private readonly bin: string;
   private readonly timeoutMs: number;
   private readonly extraArgs: string[];
+  private readonly cwd: string | undefined;
 
   constructor(opts: ClaudeCodeBrainOptions = {}) {
     this.model = opts.model ?? "sonnet";
     this.bin = opts.bin ?? "claude";
     this.timeoutMs = opts.timeoutMs ?? 120_000;
     this.extraArgs = opts.extraArgs ?? ["--allowedTools", ""];
+    this.cwd = opts.cwd;
   }
 
   async run(prompt: string, opts: BrainRunOptions = {}): Promise<string> {
@@ -61,7 +66,7 @@ export class ClaudeCodeBrain implements Brain {
 
   private exec(args: string[], stdin: string, timeoutMs: number): Promise<string> {
     return new Promise((resolve, reject) => {
-      const child = spawn(this.bin, args, { stdio: ["pipe", "pipe", "pipe"] });
+      const child = spawn(this.bin, args, { stdio: ["pipe", "pipe", "pipe"], cwd: this.cwd });
 
       let stdout = "";
       let stderr = "";

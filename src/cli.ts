@@ -9,6 +9,7 @@ import {
   DEFAULT_BOT_NAME,
   DEFAULT_RECALL_BASE_URL,
   CONSENT_MESSAGE,
+  ACTION_ALLOWED_TOOLS,
   type MexCallConfig,
 } from "./config.js";
 import { ClaudeCodeBrain } from "./brain/ClaudeCodeBrain.js";
@@ -62,8 +63,10 @@ program
       compactionIntervalMs: Number(opts.compact),
       summarizerModel: opts.model,
       activeModel: DEFAULT_CONFIG.activeModel, // unused in simulate (no active loop)
+      actionModel: DEFAULT_CONFIG.actionModel,
       summaryTargetWords: DEFAULT_CONFIG.summaryTargetWords,
       brainTimeoutMs: DEFAULT_CONFIG.brainTimeoutMs,
+      actionTimeoutMs: DEFAULT_CONFIG.actionTimeoutMs,
     };
 
     // mex detection + nudge — enhance if present, never block if absent.
@@ -119,6 +122,9 @@ program
   .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions", "recallai_streaming")
   .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable", DEFAULT_AVATAR_PATH)
   .option("--active-model <alias>", "Claude model alias for the active loop", DEFAULT_CONFIG.activeModel)
+  .option("--action-model <alias>", "Claude model alias for in-call repo actions", DEFAULT_CONFIG.actionModel)
+  .option("--no-actions", "disable in-call repo actions (Mex can still answer + log)")
+  .option("--artifacts", "on call end, also generate follow-up-email.md and product-signals.md")
   .action(async (meetUrl: string, opts) => {
     const repoRoot = resolve(opts.repo);
     loadEnv(resolve(repoRoot, ".env"));
@@ -139,8 +145,10 @@ program
       compactionIntervalMs: Number(opts.compact),
       summarizerModel: opts.model,
       activeModel: opts.activeModel,
+      actionModel: opts.actionModel,
       summaryTargetWords: DEFAULT_CONFIG.summaryTargetWords,
       brainTimeoutMs: DEFAULT_CONFIG.brainTimeoutMs,
+      actionTimeoutMs: DEFAULT_CONFIG.actionTimeoutMs,
     };
 
     const mex = detectMexScaffold(repoRoot);
@@ -205,6 +213,20 @@ program
       process.exit(1);
     }
 
+    // Tool-enabled action brain for in-call repo actions (MVP 4): a separate
+    // `claude -p` that runs IN the repo with gh/git/Write/Edit. Only fires on a
+    // "repo_action" request, never on plain Q&A.
+    const actionBrain =
+      opts.actions === false
+        ? undefined
+        : new ClaudeCodeBrain({
+            model: config.actionModel,
+            timeoutMs: config.actionTimeoutMs,
+            cwd: repoRoot,
+            extraArgs: ["--allowedTools", ...ACTION_ALLOWED_TOOLS],
+          });
+    log(actionBrain ? `in-call repo actions: on (${ACTION_ALLOWED_TOOLS.join(", ")})` : "in-call repo actions: off");
+
     const activeLoop = new ActiveLoop(memory, brain, config, {
       sendChatMessage: (text, o) => session!.sendChatMessage(text, o),
       repoRoot,
@@ -212,6 +234,7 @@ program
       getParticipants: () => participants.render(),
       log,
       onActivity: activity,
+      actionBrain,
     });
 
     // Wire listeners immediately so we don't miss early events. Passive loop
@@ -247,7 +270,7 @@ program
       dashboard.markEnded();
       dashboard.write(); // final snapshot while memory is still in live/
       await loop.stop();
-      const { archivePath } = await finalizeCall(memory, brain, config, log);
+      const { archivePath } = await finalizeCall(memory, brain, config, log, { artifacts: opts.artifacts });
       log(`archived call → ${archivePath}`);
       try {
         await session!.leave();

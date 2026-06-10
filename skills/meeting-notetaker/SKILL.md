@@ -7,8 +7,9 @@ description: How and when to use mex-call — a bot that joins a Google Meet, ca
 **mex-call** sends a notetaker bot into a Google Meet. It listens, continuously
 writes bounded structured memory under `.mex/meetings/` in the current repo
 (rolling summary, decisions, action items, open questions, participants), and
-when someone says **"Mex, …"** out loud it answers in the meeting chat or records
-a decision. It does not speak. It is built on [mex](https://github.com/theDakshJaitly/mex)
+when someone says **"Mex, …"** out loud it answers in the meeting chat, records a
+decision, or takes a repo action ("Mex, create an issue for that" → a real GitHub
+issue / doc edit / PR draft, grounded in the call). It does not speak. It is built on [mex](https://github.com/theDakshJaitly/mex)
 but never requires it — in a repo without a mex scaffold it runs standalone and
 nudges; in one with a scaffold it also reads `.mex/context` and `.mex/patterns`.
 

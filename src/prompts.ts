@@ -91,10 +91,10 @@ export interface ActiveInput {
 export interface ActiveOutput {
   /** false if "mex" wasn't actually directed at the bot — then we stay silent. */
   addressed: boolean;
-  action: "answer" | "log_decision" | "log_action_item" | "log_open_question" | "none";
-  /** For log_* actions: the exact text to record. "" otherwise. */
+  action: "answer" | "log_decision" | "log_action_item" | "log_open_question" | "repo_action" | "none";
+  /** For log_* actions: the text to record. For repo_action: the task to carry out. "" otherwise. */
   item: string;
-  /** Plain-text chat reply to post. */
+  /** Plain-text chat reply to post. Empty for repo_action (the action brain writes it). */
   message: string;
 }
 
@@ -148,11 +148,103 @@ Guidance:
 - "Mex, make an action item for <person> to <task>" → action "log_action_item";
   item = "@<person>: <task>"; message = confirmation.
 - "Mex, that's an open question" → action "log_open_question"; item = the question.
+- A request to DO something in the repo — "Mex, create an issue for that", "open a
+  PR", "update the architecture notes", "make a task for X" → action "repo_action";
+  item = a clear, self-contained description of the task grounded in what was said
+  (e.g. "Create a GitHub issue for the decision to move the v2 API to cursor-based
+  pagination; include the rationale discussed."); leave message "" (the action is
+  carried out separately and writes its own confirmation).
 - A question you can answer from the memory or repo context → action "answer".
 - If "mex" was NOT actually directed at you (mentioned in passing, talking ABOUT mex,
   etc.) → set addressed=false, action "none", item "", message "".
 - Never invent decisions/owners that weren't said. If unsure what to record, use
   action "answer" and ask a brief clarifying question instead.`;
+}
+
+export interface ActionInput {
+  task: string;
+  repoRoot: string;
+  rollingSummary: string;
+  decisions: string[];
+  actionItems: string[];
+  participants: string;
+}
+
+/**
+ * Prompt for the tool-enabled action brain (MVP 4). This runs as a real Claude
+ * Code session IN the repo with gh/git/Write/Edit, so it can create issues,
+ * draft docs/PRs, etc. It must finish with a one-line plain-text confirmation —
+ * that line is posted into the meeting chat.
+ */
+export function buildActionPrompt(i: ActionInput): string {
+  return `You are Mex, an AI agent with a seat in a live meeting and access to this repo.
+Someone in the meeting asked you to do something in the repo. Carry it out now using
+your tools, grounded in what was actually said.
+
+REPO: ${i.repoRoot}
+
+TASK:
+${i.task}
+
+LIVE MEETING CONTEXT (ground the work in this — do not invent beyond it):
+== ROLLING SUMMARY ==
+${i.rollingSummary || "(empty)"}
+== DECISIONS ==
+${bullets(i.decisions)}
+== ACTION ITEMS ==
+${bullets(i.actionItems)}
+== PARTICIPANTS ==
+${i.participants || "(unknown)"}
+
+Guidelines:
+- GitHub issues/PRs: use \`gh\` (e.g. \`gh issue create --title … --body …\`). If \`gh\`
+  isn't authenticated or there's no remote, say so instead of guessing.
+- Docs/notes: use Write/Edit. Keep changes minimal and clearly attributable to the
+  call. Do NOT commit, push, or open PRs unless explicitly asked to.
+- Don't invent decisions, owners, or facts that weren't in the meeting.
+- If the task is ambiguous or unsafe, do the safest useful thing (e.g. a draft) and
+  say what you did.
+
+When finished, reply with EXACTLY ONE short plain-text sentence confirming what you
+did (e.g. "Created issue #42: move v2 API to cursor pagination." or "Drafted updates
+to docs/architecture.md"). No markdown — it goes straight into the meeting chat.`;
+}
+
+export function buildFollowUpEmailPrompt(i: FinalSummaryInput): string {
+  return `The meeting "${i.callName}" just ended. Draft a concise follow-up email recapping it,
+ready for a human to skim, edit, and send.
+
+== ROLLING SUMMARY ==
+${i.rollingSummary || "(empty)"}
+== DECISIONS ==
+${bullets(i.decisions)}
+== ACTION ITEMS ==
+${bullets(i.actionItems)}
+== OPEN QUESTIONS ==
+${bullets(i.openQuestions)}
+
+Write Markdown with a Subject line, a one-paragraph recap, a "Decisions" list, a
+"Next steps / owners" list (keep any @owner), and "Open questions". Keep it tight and
+professional. Don't invent anything not above. Output ONLY the email.`;
+}
+
+export function buildProductSignalsPrompt(i: FinalSummaryInput): string {
+  return `The meeting "${i.callName}" just ended. Extract product-relevant signals an agent or
+PM would want later — especially from user-research / customer calls.
+
+== ROLLING SUMMARY ==
+${i.rollingSummary || "(empty)"}
+== DECISIONS ==
+${bullets(i.decisions)}
+== ACTION ITEMS ==
+${bullets(i.actionItems)}
+== OPEN QUESTIONS ==
+${bullets(i.openQuestions)}
+
+Write Markdown with sections (omit any that are genuinely empty): Pain points,
+Feature requests, Objections / risks, Notable quotes, Opportunities. Only include
+signals actually present above — if there are none, say "No clear product signals in
+this call." Output ONLY the Markdown.`;
 }
 
 export function buildFinalSummaryPrompt(input: FinalSummaryInput): string {

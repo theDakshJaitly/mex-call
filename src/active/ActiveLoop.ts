@@ -3,7 +3,7 @@ import type { MeetingMemory } from "../memory/MeetingMemory.js";
 import type { MexCallConfig } from "../config.js";
 import type { TranscriptChunk } from "../types.js";
 import type { MexScaffoldStatus } from "../memory/scaffold.js";
-import { buildActivePrompt, type ActiveOutput } from "../prompts.js";
+import { buildActivePrompt, buildActionPrompt, type ActiveOutput } from "../prompts.js";
 import { detectWake } from "./wake.js";
 import { readMexContext } from "./mexContext.js";
 
@@ -17,6 +17,11 @@ export interface ActiveLoopDeps {
   log?: (msg: string) => void;
   /** Structured feed for the live dashboard (icon + text). */
   onActivity?: (icon: string, text: string) => void;
+  /**
+   * Tool-enabled brain for in-call repo actions (MVP 4): a `claude -p` running
+   * in the repo with gh/git/Write/Edit. Omit to disable repo actions.
+   */
+  actionBrain?: Brain;
 }
 
 /**
@@ -85,6 +90,11 @@ export class ActiveLoop {
         this.deps.onActivity?.("📝", `logged ${out.action.replace("log_", "").replace("_", " ")}: ${truncate(out.item, 70)}`);
       }
 
+      if (out.action === "repo_action") {
+        await this.handleRepoAction(out.item);
+        return;
+      }
+
       const message = out.message.trim();
       if (message) {
         await this.deps.sendChatMessage(message, { pinned: false });
@@ -101,6 +111,40 @@ export class ActiveLoop {
         /* chat may be unavailable; already logged */
       }
     }
+  }
+
+  /** MVP 4: hand the task to the tool-enabled action brain (runs in the repo). */
+  private async handleRepoAction(task: string): Promise<void> {
+    if (!this.deps.actionBrain) {
+      await this.deps.sendChatMessage("I can't take repo actions in this call (they're turned off).");
+      return;
+    }
+    if (!task.trim()) {
+      await this.deps.sendChatMessage("I didn't catch what to do in the repo — say it again?");
+      return;
+    }
+    this.deps.onActivity?.("🔧", `acting on repo: ${truncate(task, 70)}`);
+    this.log(`repo action: ${truncate(task, 120)}`);
+
+    const prompt = buildActionPrompt({
+      task,
+      repoRoot: this.deps.repoRoot,
+      rollingSummary: this.memory.readSummary(),
+      decisions: this.memory.readDecisions(),
+      actionItems: this.memory.readActionItems(),
+      participants: this.deps.getParticipants?.() ?? "",
+    });
+
+    // May throw (timeout, tool error) — the caller's catch posts a fallback.
+    const result = await this.deps.actionBrain.run(prompt, {
+      model: this.config.actionModel,
+      timeoutMs: this.config.actionTimeoutMs,
+    });
+
+    const message = (result.trim() || "Done.").slice(0, 400);
+    await this.deps.sendChatMessage(message, { pinned: false });
+    this.deps.onActivity?.("✅", `repo action: ${truncate(message, 80)}`);
+    this.log(`repo action done: ${truncate(message, 100)}`);
   }
 
   private log(msg: string): void {
@@ -125,7 +169,7 @@ export function parseActive(raw: string): ActiveOutput | null {
   try {
     const obj = JSON.parse(text.slice(start, end + 1));
     const action = obj.action;
-    const validActions = ["answer", "log_decision", "log_action_item", "log_open_question", "none"];
+    const validActions = ["answer", "log_decision", "log_action_item", "log_open_question", "repo_action", "none"];
     return {
       addressed: obj.addressed === true,
       action: validActions.includes(action) ? action : "none",
