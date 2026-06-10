@@ -14,13 +14,18 @@ export interface RecallTransportOptions {
   port?: number;
   transcriptProvider?: "recallai_streaming" | "meeting_captions";
   languageCode?: string;
+  /** Camera-tile image (base64 JPEG). Omit for no custom tile. */
+  avatar?: { kind: "jpeg"; b64Data: string };
   log?: (msg: string) => void;
 }
 
 /** Recall.ai implementation of MeetingTransport (MVP 1). */
 export class RecallTransport implements MeetingTransport {
   private readonly client: RecallClient;
-  private readonly opts: Required<Omit<RecallTransportOptions, "apiKey" | "baseUrl" | "log">> & {
+  private readonly opts: Required<
+    Omit<RecallTransportOptions, "apiKey" | "baseUrl" | "log" | "avatar">
+  > & {
+    avatar?: { kind: "jpeg"; b64Data: string };
     log: (msg: string) => void;
   };
 
@@ -30,6 +35,7 @@ export class RecallTransport implements MeetingTransport {
       port: o.port ?? 0,
       transcriptProvider: o.transcriptProvider ?? "recallai_streaming",
       languageCode: o.languageCode ?? "en",
+      avatar: o.avatar,
       log: o.log ?? (() => {}),
     };
   }
@@ -54,6 +60,7 @@ export class RecallTransport implements MeetingTransport {
         transcriptProvider: this.opts.transcriptProvider,
         languageCode: this.opts.languageCode,
         events: RECALL_REALTIME_EVENTS,
+        avatar: this.opts.avatar,
       });
     } catch (err) {
       await server.stop();

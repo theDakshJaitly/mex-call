@@ -45,6 +45,8 @@ export interface CreateBotOptions {
   transcriptProvider: "recallai_streaming" | "meeting_captions";
   languageCode: string;
   events: string[];
+  /** Optional camera-tile image (base64 JPEG) shown in the participant list. */
+  avatar?: { kind: "jpeg"; b64Data: string };
 }
 
 export interface RecallBot {
@@ -80,9 +82,19 @@ export class RecallClient {
   }
 
   async createBot(opts: CreateBotOptions): Promise<RecallBot> {
+    const avatarOutput = opts.avatar
+      ? {
+          automatic_video_output: {
+            in_call_recording: { kind: opts.avatar.kind, b64_data: opts.avatar.b64Data },
+            in_call_not_recording: { kind: opts.avatar.kind, b64_data: opts.avatar.b64Data },
+          },
+        }
+      : {};
+
     const body = {
       meeting_url: opts.meetingUrl,
       bot_name: opts.botName,
+      ...avatarOutput,
       recording_config: {
         transcript: {
           provider:

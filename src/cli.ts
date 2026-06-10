@@ -17,8 +17,14 @@ import { SimulatedTranscriptSource } from "./transport/SimulatedTranscriptSource
 import { PassiveLoop } from "./loops/PassiveLoop.js";
 import { finalizeCall } from "./finalize.js";
 import { loadEnv } from "./util/env.js";
+import { fileURLToPath } from "node:url";
 import { RecallTransport, type RecallBotSession } from "./recall/RecallTransport.js";
 import { Participants } from "./recall/Participants.js";
+import { loadAvatar } from "./recall/avatar.js";
+
+// Bundled Mex logo (assets/ ships with the package; ../ resolves the same from
+// both dist/cli.js and src/cli.ts since each sits one level under the root).
+const DEFAULT_AVATAR_PATH = fileURLToPath(new URL("../assets/mex-avatar.jpg", import.meta.url));
 
 const log = (msg: string) => process.stderr.write(`[mex-call] ${msg}\n`);
 
@@ -107,6 +113,7 @@ program
   .option("-w, --window <chars>", "size trigger for the unsummarized window", String(DEFAULT_CONFIG.windowMaxChars))
   .option("-p, --port <port>", "local webhook port (0 = OS-assigned)", "8080")
   .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions", "recallai_streaming")
+  .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable", DEFAULT_AVATAR_PATH)
   .action(async (meetUrl: string, opts) => {
     const repoRoot = resolve(opts.repo);
     loadEnv(resolve(repoRoot, ".env"));
@@ -141,11 +148,16 @@ program
     const loop = new PassiveLoop(memory, brain, config, { onLog: log });
     const participants = new Participants();
 
+    const avatar =
+      opts.avatar && opts.avatar !== "none" ? loadAvatar(resolve(opts.avatar), log) ?? undefined : undefined;
+    if (avatar) log(`bot tile: ${opts.avatar}`);
+
     const transport = new RecallTransport({
       apiKey,
       baseUrl,
       port: Number(opts.port),
       transcriptProvider: opts.provider === "meeting_captions" ? "meeting_captions" : "recallai_streaming",
+      avatar,
       log,
     });
 

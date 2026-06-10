@@ -25,6 +25,7 @@ export { RecallTransport, RecallBotSession } from "./recall/RecallTransport.js";
 export { RecallClient } from "./recall/RecallClient.js";
 export { RealtimeServer } from "./recall/RealtimeServer.js";
 export { Participants } from "./recall/Participants.js";
+export { loadAvatar, type BotAvatar } from "./recall/avatar.js";
 export { parseTranscriptEvent, parseParticipantEvent } from "./recall/events.js";
 export { resolvePublicUrl } from "./recall/tunnel.js";
 export { RateLimiter, SerialQueue, sleep } from "./util/RateLimiter.js";
