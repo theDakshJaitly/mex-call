@@ -74,6 +74,82 @@ export interface FinalSummaryInput {
   openQuestions: string[];
 }
 
+export interface ActiveInput {
+  /** The utterance that addressed Mex. */
+  utterance: string;
+  speaker: string;
+  rollingSummary: string;
+  window: string;
+  participants: string;
+  decisions: string[];
+  actionItems: string[];
+  openQuestions: string[];
+  /** Bounded .mex/context + patterns when a scaffold is present; "" otherwise. */
+  repoContext: string;
+}
+
+export interface ActiveOutput {
+  /** false if "mex" wasn't actually directed at the bot — then we stay silent. */
+  addressed: boolean;
+  action: "answer" | "log_decision" | "log_action_item" | "log_open_question" | "none";
+  /** For log_* actions: the exact text to record. "" otherwise. */
+  item: string;
+  /** Plain-text chat reply to post. */
+  message: string;
+}
+
+export function buildActivePrompt(i: ActiveInput): string {
+  const repoBlock = i.repoContext
+    ? `\n== REPO CONTEXT (from this repo's .mex scaffold; authoritative) ==\n${i.repoContext}\n`
+    : "";
+  return `You are Mex, an AI agent with a seat in a live meeting. Someone said your name.
+You do NOT speak out loud — you reply in the meeting chat. Replies are PLAIN TEXT
+(no markdown, no hyperlinks — Google Meet renders neither). Be concise: 1–3 sentences.
+You also maintain the meeting's structured memory.
+
+== ROLLING_SUMMARY ==
+${i.rollingSummary || "(empty)"}
+
+== RECENT_TRANSCRIPT (most recent last) ==
+${i.window || "(empty)"}
+
+== PARTICIPANTS ==
+${i.participants || "(unknown)"}
+
+== DECISIONS_SO_FAR ==
+${bullets(i.decisions)}
+
+== ACTION_ITEMS_SO_FAR ==
+${bullets(i.actionItems)}
+
+== OPEN_QUESTIONS_SO_FAR ==
+${bullets(i.openQuestions)}
+${repoBlock}
+The line that addressed you (from ${i.speaker}):
+"${i.utterance}"
+
+Decide how to respond, then output ONLY this JSON (no markdown, no code fences):
+{
+  "addressed": boolean,
+  "action": "answer" | "log_decision" | "log_action_item" | "log_open_question" | "none",
+  "item": "string",
+  "message": "string"
+}
+
+Guidance:
+- "Mex, summarize where we are" → action "answer"; message = a tight summary from memory.
+- "Mex, remember/log that as a decision" → action "log_decision"; item = the decision
+  (infer the specifics from the recent transcript); message = a short confirmation.
+- "Mex, make an action item for <person> to <task>" → action "log_action_item";
+  item = "@<person>: <task>"; message = confirmation.
+- "Mex, that's an open question" → action "log_open_question"; item = the question.
+- A question you can answer from the memory or repo context → action "answer".
+- If "mex" was NOT actually directed at you (mentioned in passing, talking ABOUT mex,
+  etc.) → set addressed=false, action "none", item "", message "".
+- Never invent decisions/owners that weren't said. If unsure what to record, use
+  action "answer" and ask a brief clarifying question instead.`;
+}
+
 export function buildFinalSummaryPrompt(input: FinalSummaryInput): string {
   return `The meeting "${input.callName}" has ended. Using the accumulated memory below,
 write a final summary in Markdown for both humans and AI coding agents to consume later.

@@ -8,6 +8,9 @@ export { SimulatedTranscriptSource, parseTranscriptFile } from "./transport/Simu
 export { MeetingMemory } from "./memory/MeetingMemory.js";
 export { detectMexScaffold, type MexScaffoldStatus } from "./memory/scaffold.js";
 export { PassiveLoop } from "./loops/PassiveLoop.js";
+export { ActiveLoop, parseActive } from "./active/ActiveLoop.js";
+export { detectWake } from "./active/wake.js";
+export { readMexContext } from "./active/mexContext.js";
 export { finalizeCall } from "./finalize.js";
 export {
   DEFAULT_CONFIG,

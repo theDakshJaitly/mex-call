@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { RecallTransport, type RecallBotSession } from "./recall/RecallTransport.js";
 import { Participants } from "./recall/Participants.js";
 import { loadAvatar } from "./recall/avatar.js";
+import { ActiveLoop } from "./active/ActiveLoop.js";
 
 // Bundled Mex logo (assets/ ships with the package; ../ resolves the same from
 // both dist/cli.js and src/cli.ts since each sits one level under the root).
@@ -58,6 +59,7 @@ program
       windowMaxChars: Number(opts.window),
       compactionIntervalMs: Number(opts.compact),
       summarizerModel: opts.model,
+      activeModel: DEFAULT_CONFIG.activeModel, // unused in simulate (no active loop)
       summaryTargetWords: DEFAULT_CONFIG.summaryTargetWords,
       brainTimeoutMs: DEFAULT_CONFIG.brainTimeoutMs,
     };
@@ -103,7 +105,7 @@ program
 
 program
   .command("join")
-  .description("Join a Google Meet via Recall, listen, and write live memory (MVP 1 — no actions yet).")
+  .description('Join a Google Meet via Recall: listen, write live memory, and respond to "Mex, …".')
   .argument("<meet-url>", "Google Meet link")
   .option("-n, --name <name>", "call name, used for the archived folder", "meet-call")
   .option("-b, --bot-name <name>", "bot display name shown in the meeting", DEFAULT_BOT_NAME)
@@ -114,6 +116,7 @@ program
   .option("-p, --port <port>", "local webhook port (0 = OS-assigned)", "8080")
   .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions", "recallai_streaming")
   .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable", DEFAULT_AVATAR_PATH)
+  .option("--active-model <alias>", "Claude model alias for the active loop", DEFAULT_CONFIG.activeModel)
   .action(async (meetUrl: string, opts) => {
     const repoRoot = resolve(opts.repo);
     loadEnv(resolve(repoRoot, ".env"));
@@ -132,6 +135,7 @@ program
       windowMaxChars: Number(opts.window),
       compactionIntervalMs: Number(opts.compact),
       summarizerModel: opts.model,
+      activeModel: opts.activeModel,
       summaryTargetWords: DEFAULT_CONFIG.summaryTargetWords,
       brainTimeoutMs: DEFAULT_CONFIG.brainTimeoutMs,
     };
@@ -169,8 +173,20 @@ program
       process.exit(1);
     }
 
-    // Wire listeners immediately so we don't miss early events.
-    session.onTranscript((chunk) => loop.ingest(chunk));
+    const activeLoop = new ActiveLoop(memory, brain, config, {
+      sendChatMessage: (text, o) => session!.sendChatMessage(text, o),
+      repoRoot,
+      mexStatus: mex,
+      getParticipants: () => participants.render(),
+      log,
+    });
+
+    // Wire listeners immediately so we don't miss early events. Passive loop
+    // (always) + active loop (only on the "Mex, …" wake phrase) both see finals.
+    session.onTranscript((chunk) => {
+      loop.ingest(chunk);
+      activeLoop.consider(chunk);
+    });
     session.onParticipantChange((ev) => {
       if (participants.applyAndChanged(ev)) memory.writeParticipants(participants.render());
     });
@@ -210,7 +226,7 @@ program
       })
       .catch((err: unknown) => log(`waiting for join: ${(err as Error).message}`));
 
-    log("listening… (Ctrl-C makes the bot leave and archives the call)");
+    log('listening… say "Mex, …" to address the bot. (Ctrl-C makes it leave and archives the call)');
   });
 
 program.parseAsync(process.argv).catch((err) => {

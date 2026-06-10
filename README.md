@@ -98,7 +98,7 @@ Claude Code auth is used for the brain — no `ANTHROPIC_API_KEY` required.
 
 - **MVP 0 ✅** Local memory engine (`simulate`).
 - **MVP 1 ✅** Recall listener (`join`) — joins, consent, live transcript, participants, archive. Rate-limited Recall client.
-- **MVP 2** Active loop — wake phrase "Mex, …" → Claude acts → chat reply.
+- **MVP 2 ✅** Active loop — wake phrase "Mex, …" → Claude reads live memory (+ repo `.mex/` context) → answers or logs a decision/action-item → chat reply. Passive loop keeps running throughout.
 - **MVP 3** Claude Code plugin slash command.
 - **MVP 4** Repo actions (create issue, update docs, follow-ups).
 

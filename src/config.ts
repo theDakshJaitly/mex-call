@@ -18,6 +18,8 @@ export interface MexCallConfig {
   compactionIntervalMs: number;
   /** Model alias for passive compaction/detection. */
   summarizerModel: string;
+  /** Model alias for the active loop (user-facing replies on the wake phrase). */
+  activeModel: string;
   /** Soft target length for the rolling summary, in words. Keeps it bounded. */
   summaryTargetWords: number;
   /** Per-call timeout for brain invocations. */
@@ -28,6 +30,7 @@ export const DEFAULT_CONFIG: Omit<MexCallConfig, "repoRoot" | "callName"> = {
   windowMaxChars: 4_000,
   compactionIntervalMs: 45_000,
   summarizerModel: "sonnet",
+  activeModel: "sonnet",
   summaryTargetWords: 350,
   brainTimeoutMs: 120_000,
 };
