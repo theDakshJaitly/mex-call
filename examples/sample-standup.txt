@@ -1,0 +1,34 @@
+# Sample eng standup transcript for mex-call MVP 0.
+# Format: "Speaker: text". Lines starting with # are ignored.
+
+Priya: Morning everyone. Quick standup, let us keep it tight. Daksh, where are we on the auth migration?
+Daksh: Almost done. I moved us off the old session cookies to short-lived JWTs yesterday. The refresh-token rotation is the last piece.
+Priya: How long on the rotation?
+Daksh: A day, maybe two. The tricky part is revoking tokens when someone logs out on another device.
+Marcus: Are we storing the refresh tokens in Redis or Postgres?
+Daksh: Right now Postgres. I am not sure it will hold up under load though.
+Marcus: We saw Redis latency spikes last month during the sale, so I would be careful leaning on it for auth.
+Priya: Okay, let us decide: refresh tokens go in Postgres for now, we revisit Redis only if we see contention. Agreed?
+Daksh: Agreed. Postgres it is.
+Marcus: Works for me.
+Priya: Good. That is decided. Daksh, can you write up the token rotation design in the architecture notes before you ship it?
+Daksh: Yeah, I will draft the rotation doc by Thursday.
+Priya: Marcus, what about the billing webhook retries?
+Marcus: Shipped. We now retry failed Stripe webhooks with exponential backoff, five attempts, then dead-letter. I am seeing zero dropped events since Tuesday.
+Priya: Nice. Any follow-up needed?
+Marcus: One thing. We do not alert when something hits the dead-letter queue. If a payment event lands there we would not know.
+Priya: That is a real gap. Marcus, set up an alert on the dead-letter queue.
+Marcus: On it. I will wire up a PagerDuty alert for the DLQ this week.
+Priya: Open question for the group: do we need idempotency keys on the webhook handler, or is the dedupe we have enough?
+Marcus: I genuinely am not sure. Stripe can send duplicates, and our current dedupe is best-effort.
+Daksh: I have seen double-charges in the logs twice. I think we need real idempotency keys.
+Priya: Let us not decide blind. Marcus, can you pull the numbers on how often duplicates actually happen before we commit to building idempotency keys?
+Marcus: Sure, I will get duplicate-rate numbers from the last thirty days.
+Priya: Last thing. The mobile team wants our API to support cursor-based pagination instead of offset. Thoughts?
+Daksh: Offset pagination breaks badly on large feeds, so cursor is the right call long term. It is a breaking change though.
+Marcus: We would need to version the endpoint. v2 with cursors, keep v1 alive for a deprecation window.
+Priya: I like that. But how long is the deprecation window, and who owns talking to the mobile team about cutover? We can figure that out after standup.
+Daksh: Sounds good. I can prototype the cursor implementation so we know the shape.
+Priya: Great. Decision: we move to cursor-based pagination behind a v2 endpoint, v1 stays during deprecation. Daksh prototypes it.
+Daksh: Got it, I will prototype the v2 cursor pagination endpoint.
+Priya: That is everything. Thanks all.

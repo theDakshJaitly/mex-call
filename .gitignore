@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
+
+# Local tooling state (oh-my-claudecode)
+.omc/
+
+# Captured call memory produced by running mex-call against this repo itself
+# (test output, not source). In a *user's* repo, .mex/meetings/ is meant to be committed.
+.mex/

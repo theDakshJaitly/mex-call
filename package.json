@@ -1,0 +1,43 @@
+{
+  "name": "mex-call",
+  "version": "0.1.0",
+  "description": "Live meeting agent that turns conversations into agent-usable project memory (mex). MVP 0: local memory engine.",
+  "type": "module",
+  "bin": {
+    "mex-call": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/cli.js",
+    "simulate": "tsx src/cli.ts simulate"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mex",
+    "meeting",
+    "agent",
+    "memory",
+    "claude",
+    "transcript"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
