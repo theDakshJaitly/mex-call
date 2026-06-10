@@ -15,6 +15,8 @@ export interface ActiveLoopDeps {
   /** Live participant roster text, for context. */
   getParticipants?: () => string;
   log?: (msg: string) => void;
+  /** Structured feed for the live dashboard (icon + text). */
+  onActivity?: (icon: string, text: string) => void;
 }
 
 /**
@@ -41,6 +43,7 @@ export class ActiveLoop {
     const { hit, utterance } = detectWake(chunk.text);
     if (!hit) return;
     this.log(`wake heard from ${chunk.speaker}: "${truncate(utterance, 100)}"`);
+    this.deps.onActivity?.("🎙", `${chunk.speaker}: "${truncate(utterance, 80)}"`);
     this.chain = this.chain.catch(() => {}).then(() => this.handle(utterance, chunk.speaker));
   }
 
@@ -78,11 +81,15 @@ export class ActiveLoop {
       if (out.action === "log_decision" && out.item) this.memory.appendDecisions([out.item]);
       else if (out.action === "log_action_item" && out.item) this.memory.appendActionItems([out.item]);
       else if (out.action === "log_open_question" && out.item) this.memory.appendOpenQuestions([out.item]);
+      if (out.action.startsWith("log_") && out.item) {
+        this.deps.onActivity?.("📝", `logged ${out.action.replace("log_", "").replace("_", " ")}: ${truncate(out.item, 70)}`);
+      }
 
       const message = out.message.trim();
       if (message) {
         await this.deps.sendChatMessage(message, { pinned: false });
         this.log(`replied (${out.action}): ${truncate(message, 80)}`);
+        this.deps.onActivity?.("✅", `replied: ${truncate(message, 80)}`);
       } else {
         this.log(`action ${out.action} with no message — nothing posted`);
       }

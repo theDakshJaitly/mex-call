@@ -62,7 +62,31 @@ node dist/cli.js join "https://meet.google.com/abc-defg-hij" --repo .
 ```
 
 The bot joins as **Mex (notetaker)**, posts a pinned consent message, and writes
-live memory as people talk. `Ctrl-C` makes it leave and archives the call.
+live memory as people talk. `Ctrl-C` (or `mex-call leave`) makes it leave and
+archives the call.
+
+### `/mex-call <meet-link>` — launch from inside Claude Code
+
+Install the slash command once (works in any repo), and `npm link` so the CLI is
+global:
+
+```bash
+npm link                                  # global `mex-call` binary
+cp .claude/commands/mex-call.md ~/.claude/commands/   # the /mex-call command
+echo "RECALL_API_KEY=..." > ~/.mex-call.env           # key, picked up in any repo
+```
+
+Then from inside Claude Code in any repo: `/mex-call https://meet.google.com/abc-defg-hij`.
+The runtime launches in the background and your session becomes a **live dashboard** —
+status, participants, rolling summary, decisions/actions, and every "Mex, …" trigger
+and reply. The runtime pre-renders the dashboard, so refreshing it costs no model calls.
+
+### `mex-call watch` / `mex-call leave`
+
+```bash
+mex-call watch   # continuous second-by-second terminal dashboard for the live call
+mex-call leave   # make the bot leave and archive the call
+```
 
 ## Configuration
 
@@ -99,7 +123,7 @@ Claude Code auth is used for the brain — no `ANTHROPIC_API_KEY` required.
 - **MVP 0 ✅** Local memory engine (`simulate`).
 - **MVP 1 ✅** Recall listener (`join`) — joins, consent, live transcript, participants, archive. Rate-limited Recall client.
 - **MVP 2 ✅** Active loop — wake phrase "Mex, …" → Claude reads live memory (+ repo `.mex/` context) → answers or logs a decision/action-item → chat reply. Passive loop keeps running throughout.
-- **MVP 3** Claude Code plugin slash command.
+- **MVP 3 ✅** `/mex-call <link>` slash command launches the runtime; the session becomes a live, model-free dashboard. Plus `mex-call watch` (terminal) and `mex-call leave`.
 - **MVP 4** Repo actions (create issue, update docs, follow-ups).
 
 ## License

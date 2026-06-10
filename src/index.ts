@@ -12,6 +12,7 @@ export { ActiveLoop, parseActive } from "./active/ActiveLoop.js";
 export { detectWake } from "./active/wake.js";
 export { readMexContext } from "./active/mexContext.js";
 export { finalizeCall } from "./finalize.js";
+export { Dashboard, type DashboardMeta } from "./runtime/Dashboard.js";
 export {
   DEFAULT_CONFIG,
   VERSION,

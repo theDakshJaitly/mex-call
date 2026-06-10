@@ -28,6 +28,11 @@ export class Participants {
     return before !== after;
   }
 
+  /** Names currently in the call, sorted. */
+  presentNames(): string[] {
+    return [...this.present.keys()].sort();
+  }
+
   render(): string {
     const here = [...this.present.keys()].sort();
     const left = [...this.seen].filter((n) => !this.present.has(n)).sort();
