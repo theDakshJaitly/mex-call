@@ -18,7 +18,8 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "start": "node dist/cli.js",
-    "simulate": "tsx src/cli.ts simulate"
+    "simulate": "tsx src/cli.ts simulate",
+    "prepublishOnly": "npm run build"
   },
   "engines": {
     "node": ">=18"

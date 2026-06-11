@@ -4,6 +4,9 @@ dist/
 .env
 .DS_Store
 
+# Internal planning docs — local only, never published
+docs/
+
 # Local tooling state (oh-my-claudecode)
 .omc/
 
