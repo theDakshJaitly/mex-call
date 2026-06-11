@@ -23,6 +23,7 @@ import { RecallTransport, type RecallBotSession } from "./recall/RecallTransport
 import { Participants } from "./recall/Participants.js";
 import { loadAvatar } from "./recall/avatar.js";
 import { ActiveLoop } from "./active/ActiveLoop.js";
+import { runMex } from "./mex/runMex.js";
 import { Dashboard } from "./runtime/Dashboard.js";
 
 // Bundled Mex logo (assets/ ships with the package; ../ resolves the same from
@@ -32,6 +33,7 @@ const DEFAULT_AVATAR_PATH = fileURLToPath(new URL("../assets/mex-avatar.jpg", im
 const log = (msg: string) => process.stderr.write(`[mex-call] ${msg}\n`);
 
 const program = new Command();
+program.enablePositionalOptions(); // lets the mex passthrough commands forward flags
 program
   .name("mex-call")
   .description("Live meeting agent → agent-usable project memory (mex). MVP 0: local memory engine.")
@@ -356,6 +358,24 @@ program
       log(`could not signal pid ${pid}: ${(err as Error).message}`);
       process.exit(1);
     }
+  });
+
+program
+  .command("setup [mexArgs...]")
+  .description("Set up mex in this repo (runs the bundled `mex setup`). Optional — mex-call runs without it.")
+  .allowUnknownOption(true)
+  .passThroughOptions()
+  .action(async (mexArgs: string[] = []) => {
+    process.exit(await runMex(["setup", ...mexArgs], process.cwd()));
+  });
+
+program
+  .command("mex [args...]")
+  .description('Run any bundled mex command (e.g. `mex-call mex init`, `mex-call mex log "decided X"`).')
+  .allowUnknownOption(true)
+  .passThroughOptions()
+  .action(async (args: string[] = []) => {
+    process.exit(await runMex(args, process.cwd()));
   });
 
 program.parseAsync(process.argv).catch((err) => {

@@ -112,8 +112,32 @@ mex-call leave   # make the bot leave and archive the call
 | `RECALL_API_KEY` | Recall API key (server-side secret). |
 | `RECALL_API_URL` | Region base URL. Default `https://us-west-2.recall.ai`. |
 | `MEXCALL_PUBLIC_URL` | Public webhook URL for production (skips ngrok auto-detect). |
+| `MEXCALL_BRAIN` | Force the brain agent: `claude` or `codex` (default: auto-detect). |
+| `MEXCALL_CODEX_MODEL` | Model for the codex brain (else codex's default). |
 
-Claude Code auth is used for the brain — no `ANTHROPIC_API_KEY` required.
+The brain uses your coding agent's own auth — no `ANTHROPIC_API_KEY` required.
+
+## Works with any coding agent
+
+The runtime is a plain CLI, and its output — structured `.mex/meetings/` memory +
+repo actions — is consumed by **any** agent that reads the repo. The brain
+auto-detects which agent is driving it and uses that agent's headless CLI:
+
+- **Claude Code** → `claude -p` (and the `/mex-call` plugin)
+- **Codex** → `codex exec` (no plugin needed — just run `mex-call join …` in the terminal)
+
+Detection order: `--brain` / `MEXCALL_BRAIN` → env markers (`CLAUDECODE` / `CODEX_*`)
+→ whichever CLI is installed. Force it with `mex-call join … --brain codex`.
+
+## mex is bundled
+
+mex ships with mex-call (the `mex-agent` dependency) — no separate install. It's
+optional (mex-call runs standalone), but when you want the richer scaffold:
+
+```bash
+mex-call setup            # runs the bundled `mex setup` in this repo
+mex-call mex <command>    # any mex command, e.g. `mex-call mex init`, `mex-call mex log "..."`
+```
 
 ## Memory layout
 

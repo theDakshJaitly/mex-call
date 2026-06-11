@@ -41,6 +41,6 @@ export const MEX_NUDGE = [
   "     mex-call works fine like this, but with mex set up it gets smarter:",
   "     it can read your architecture, conventions and past decisions, and the",
   "     call memory it writes joins the same compounding scaffold.",
-  "     Set it up:  npx mex@latest setup   (https://github.com/theDakshJaitly/mex)",
+  "     mex is already bundled — set it up anytime with:  mex-call setup",
   "",
 ].join("\n");
