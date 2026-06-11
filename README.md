@@ -1,19 +1,47 @@
 # mex-call
 
-A live meeting agent that gives your AI coding agent a seat in the room. A bot
-joins a Google Meet, listens, and continuously turns the conversation into
-**bounded, structured, agent-readable memory** under `.mex/meetings/` — the
-decisions, action items, and open questions that get made in calls but never
-make it back to the code.
+> **Claude Code, now in your Google Meet** — with the memory and context powers of [mex](https://github.com/theDakshJaitly/mex).
 
-It is built on [mex](https://github.com/theDakshJaitly/mex) but does **not**
-require it: run it in any repo and it works standalone; in a repo that already
-has a mex scaffold, it gets smarter (it can read your architecture, conventions,
-and past decisions).
+A bot joins your Google Meet, listens, and turns the conversation into **bounded,
+structured, agent-readable memory** in your repo — the decisions, action items, and
+open questions that get made in calls but never make it back to the code. Say
+**"Mex, …"** and it answers in the chat or acts in the repo (create an issue, draft
+a doc), grounded in what was actually said. It never speaks; output is chat, files,
+and repo actions.
 
-> **No voice, ever.** The bot doesn't talk. Its output is chat messages, files,
-> and (soon) repo actions. That single decision removes all the streaming/TTS
-> latency machinery and leaves one brain: **Claude Code**.
+It runs on your coding agent's own brain — **Claude Code** (`claude -p`) or
+**Codex** (`codex exec`), auto-detected — and on **mex** for project memory
+(bundled; optional).
+
+## Install
+
+First, a free [Recall.ai](https://www.recall.ai) API key (the bot that joins the
+call). Put it where mex-call will find it in any repo:
+
+```bash
+echo "RECALL_API_KEY=your-key" > ~/.mex-call.env
+```
+
+### Claude Code → plugin
+
+```
+/plugin marketplace add theDakshJaitly/mex-call
+/plugin install mex-call@mex-call
+```
+
+Then in any repo: **`/mex-call:call <google-meet-link>`**
+
+### Codex, Cursor, or any terminal → npm
+
+```bash
+npm install -g mex-call
+```
+
+Then in any repo: **`mex-call join <google-meet-link>`** — the brain auto-detects
+Claude Code vs. Codex.
+
+> **Dev note:** Recall needs a public webhook URL. Run `ngrok http 8080` and
+> mex-call auto-detects it (or set `MEXCALL_PUBLIC_URL` to a deployed domain).
 
 ## How it works
 
@@ -31,78 +59,43 @@ The passive loop never sends the full transcript to the model — only a bounded
 how long the call runs. The brain is headless `claude -p` (uses your Claude Code
 auth — no API key needed).
 
-## Install
-
-```bash
-npm install
-npm run build
-```
-
 ## Usage
 
-### `simulate` — local memory engine (no meeting, no Recall)
+Admit **"Mex (notetaker)"** when it knocks. It posts a pinned consent message and
+writes live memory as people talk. During the call:
 
-Feed a `Speaker: text` transcript file on a timer to validate the memory engine:
+- **Just listening** — every chunk is compacted into a bounded rolling memory;
+  decisions, action items, and open questions are detected automatically.
+- **"Mex, summarize where we are"** → it replies in the meeting chat.
+- **"Mex, log that as a decision"** → appends to `decisions.md` and confirms.
+- **"Mex, create an issue for that"** → opens a real GitHub issue / drafts a doc,
+  grounded in the call, and confirms in chat.
 
-```bash
-node dist/cli.js simulate examples/sample-standup.txt --name standup --repo .
-```
-
-### `join` — join a real Google Meet (Recall)
-
-```bash
-# 1. set your Recall key
-cp .env.example .env      # then add RECALL_API_KEY=...
-
-# 2. expose the local webhook server (dev). Auto-detected — no copy/paste.
-ngrok http 8080
-
-# 3. join a meeting (memory lands in --repo)
-node dist/cli.js join "https://meet.google.com/abc-defg-hij" --repo .
-```
-
-The bot joins as **Mex (notetaker)**, posts a pinned consent message, and writes
-live memory as people talk. `Ctrl-C` (or `mex-call leave`) makes it leave and
-archives the call.
-
-### From inside Claude Code
-
-Put your Recall key somewhere mex-call will find it in any repo:
+Control it:
 
 ```bash
-echo "RECALL_API_KEY=..." > ~/.mex-call.env
+mex-call watch     # live terminal dashboard for the call
+mex-call leave     # bot leaves and archives the call to .mex/meetings/<date>-<name>/
 ```
 
-**As a plugin (recommended — ships the how-to skill + a live-stream monitor):**
+On call end it archives a finalized folder (final summary, decisions, action items,
+open questions, full transcript). Add `--artifacts` to also generate a follow-up
+email and product signals.
 
-```
-/plugin marketplace add theDakshJaitly/mex-call     # or a local path during dev
-/plugin install mex-call@mex-call
-```
-
-A `SessionStart` hook builds the bundled CLI on first run, so nothing else to set
-up. Then in any repo: `/mex-call:call https://meet.google.com/abc-defg-hij`. The
-runtime launches in the background, the session becomes a **live dashboard**
-(status, participants, rolling summary, decisions/actions, and every "Mex, …"
-trigger + reply), and the plugin's background monitor streams each new event into
-the session as it happens. The runtime pre-renders the dashboard, so it costs no
-model calls. Claude also gains a model-invoked `meeting-notetaker` skill so it
-knows when to suggest mex-call.
-
-**Standalone (clean `/mex-call` name, no plugin):**
+### Try it without a meeting
 
 ```bash
-npm link                                              # global `mex-call` binary
-cp .claude/commands/mex-call.md ~/.claude/commands/   # the /mex-call command
+mex-call simulate path/to/transcript.txt --name standup
 ```
 
-Then: `/mex-call https://meet.google.com/abc-defg-hij`.
+Feeds a `Speaker: text` file through the memory engine — no Recall, no meeting.
+(There's a sample at `examples/sample-standup.txt` in the repo.)
 
-### `mex-call watch` / `mex-call leave`
+## From source
 
 ```bash
-mex-call watch   # continuous second-by-second terminal dashboard for the live call
-mex-call leave   # make the bot leave and archive the call
+git clone https://github.com/theDakshJaitly/mex-call && cd mex-call
+npm install && npm run build && npm link   # global `mex-call`
 ```
 
 ## Configuration
@@ -123,7 +116,7 @@ The runtime is a plain CLI, and its output — structured `.mex/meetings/` memor
 repo actions — is consumed by **any** agent that reads the repo. The brain
 auto-detects which agent is driving it and uses that agent's headless CLI:
 
-- **Claude Code** → `claude -p` (and the `/mex-call` plugin)
+- **Claude Code** → `claude -p` (and the `/mex-call:call` plugin command)
 - **Codex** → `codex exec` (no plugin needed — just run `mex-call join …` in the terminal)
 
 Detection order: `--brain` / `MEXCALL_BRAIN` → env markers (`CLAUDECODE` / `CODEX_*`)

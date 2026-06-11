@@ -1,7 +1,7 @@
 {
   "name": "mex-call",
   "version": "0.1.0",
-  "description": "Live meeting agent that turns conversations into agent-usable project memory (mex). MVP 0: local memory engine.",
+  "description": "Claude Code, now in your Google Meet — a bot that turns the conversation into structured, agent-readable memory in your repo, with the memory and context powers of mex. Works with Claude Code (plugin) and Codex (CLI).",
   "type": "module",
   "bin": {
     "mex-call": "./dist/cli.js"
