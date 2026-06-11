@@ -9,10 +9,9 @@ import {
   DEFAULT_BOT_NAME,
   DEFAULT_RECALL_BASE_URL,
   CONSENT_MESSAGE,
-  ACTION_ALLOWED_TOOLS,
   type MexCallConfig,
 } from "./config.js";
-import { ClaudeCodeBrain } from "./brain/ClaudeCodeBrain.js";
+import { createBrain, detectAgent } from "./brain/createBrain.js";
 import { MeetingMemory } from "./memory/MeetingMemory.js";
 import { detectMexScaffold, MEX_NUDGE } from "./memory/scaffold.js";
 import { SimulatedTranscriptSource } from "./transport/SimulatedTranscriptSource.js";
@@ -81,7 +80,7 @@ program
     memory.init();
     log(`writing memory to ${memory.liveDir}`);
 
-    const brain = new ClaudeCodeBrain({ model: config.summarizerModel, timeoutMs: config.brainTimeoutMs });
+    const brain = createBrain({ role: "text", claudeModel: config.summarizerModel, timeoutMs: config.brainTimeoutMs });
     const loop = new PassiveLoop(memory, brain, config, { onLog: log });
     const source = new SimulatedTranscriptSource(transcriptPath, { intervalMs: Number(opts.interval) });
 
@@ -125,6 +124,7 @@ program
   .option("--action-model <alias>", "Claude model alias for in-call repo actions", DEFAULT_CONFIG.actionModel)
   .option("--no-actions", "disable in-call repo actions (Mex can still answer + log)")
   .option("--artifacts", "on call end, also generate follow-up-email.md and product-signals.md")
+  .option("--brain <agent>", "force the brain agent: claude | codex (default: auto-detect)")
   .action(async (meetUrl: string, opts) => {
     const repoRoot = resolve(opts.repo);
     loadEnv(resolve(repoRoot, ".env"));
@@ -159,7 +159,10 @@ program
     memory.init();
     log(`writing memory to ${memory.liveDir}`);
 
-    const brain = new ClaudeCodeBrain({ model: config.summarizerModel, timeoutMs: config.brainTimeoutMs });
+    const agent = detectAgent(opts.brain);
+    log(`brain: ${agent}${opts.brain ? " (forced)" : " (auto-detected)"}`);
+
+    const brain = createBrain({ role: "text", agent, claudeModel: config.summarizerModel, timeoutMs: config.brainTimeoutMs });
     const participants = new Participants();
 
     // Pre-rendered live dashboard (no model cost). The /mex-call session and
@@ -219,13 +222,14 @@ program
     const actionBrain =
       opts.actions === false
         ? undefined
-        : new ClaudeCodeBrain({
-            model: config.actionModel,
+        : createBrain({
+            role: "action",
+            agent,
+            claudeModel: config.actionModel,
             timeoutMs: config.actionTimeoutMs,
             cwd: repoRoot,
-            extraArgs: ["--allowedTools", ...ACTION_ALLOWED_TOOLS],
           });
-    log(actionBrain ? `in-call repo actions: on (${ACTION_ALLOWED_TOOLS.join(", ")})` : "in-call repo actions: off");
+    log(actionBrain ? `in-call repo actions: on (${agent})` : "in-call repo actions: off");
 
     const activeLoop = new ActiveLoop(memory, brain, config, {
       sendChatMessage: (text, o) => session!.sendChatMessage(text, o),

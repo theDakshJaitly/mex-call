@@ -4,6 +4,8 @@ export type { MeetingTransport, BotSession } from "./transport/MeetingTransport.
 export type { SttSource } from "./transport/SttSource.js";
 export type { Brain, BrainRunOptions } from "./brain/Brain.js";
 export { ClaudeCodeBrain } from "./brain/ClaudeCodeBrain.js";
+export { CodexBrain } from "./brain/CodexBrain.js";
+export { createBrain, detectAgent, type Agent, type BrainRole } from "./brain/createBrain.js";
 export { SimulatedTranscriptSource, parseTranscriptFile } from "./transport/SimulatedTranscriptSource.js";
 export { MeetingMemory } from "./memory/MeetingMemory.js";
 export { detectMexScaffold, type MexScaffoldStatus } from "./memory/scaffold.js";
