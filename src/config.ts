@@ -93,3 +93,29 @@ export const CONSENT_MESSAGE =
   "Mex is in the call, listening and turning this conversation into structured notes in your project's repo. " +
   "I don't speak — I reply here in chat. Recording and transcription are active. " +
   'Say "Mex, ..." to ask me to do something.';
+
+// --- Vexa / meeting transport (open-source alternative) ----------------------
+
+/**
+ * Hosted Vexa API base. Override with VEXA_API_URL (e.g. http://localhost:8056
+ * for self-host). The WebSocket URL is derived from this (http→ws, https→wss)
+ * and authenticated with `?api_key=` (Vexa's WS takes the key as a query param,
+ * not a header — its own browser client does the same).
+ */
+export const DEFAULT_VEXA_BASE_URL = "https://api.cloud.vexa.ai";
+
+/**
+ * Vexa emits ONLY `transcript.mutable` segments that are re-sent and revised —
+ * `transcript.finalized` is deprecated and never emitted, so there is no
+ * finality signal. The adapter holds each segment and treats it as final once it
+ * has gone this long with no further update (or is superseded by a later
+ * same-speaker segment), synthesizing the "one final per utterance" contract the
+ * loops require. Generous on purpose: mex-call is no-voice / relaxed-clock, so a
+ * couple seconds of stabilization lag is harmless and avoids emitting half-revised
+ * text as final.
+ */
+export const VEXA_SEGMENT_STABILIZE_MS = 2_500;
+/** How often the adapter sweeps for newly-stable segments to emit. */
+export const VEXA_DRAIN_INTERVAL_MS = 750;
+/** Application-level WS keepalive ping interval (Vexa docs recommend ~25s). */
+export const VEXA_PING_INTERVAL_MS = 25_000;
