@@ -15,8 +15,11 @@ It runs on your coding agent's own brain — **Claude Code** (`claude -p`) or
 
 ## Install
 
-First, a free [Recall.ai](https://www.recall.ai) API key (the bot that joins the
-call). Put it where mex-call will find it in any repo:
+mex-call needs a **bot transport** — the service that actually joins the Meet.
+**Recall** is the zero-setup default; **Vexa** is an open-source, self-hostable
+second option (see [Meeting transport](#meeting-transport)). For the default, grab
+a free [Recall.ai](https://www.recall.ai) API key and put it where mex-call finds
+it in any repo:
 
 ```bash
 echo "RECALL_API_KEY=your-key" > ~/.mex-call.env
@@ -40,13 +43,68 @@ npm install -g mex-call
 Then in any repo: **`mex-call join <google-meet-link>`** — the brain auto-detects
 Claude Code vs. Codex.
 
-> **Dev note:** Recall needs a public webhook URL. Run `ngrok http 8080` and
-> mex-call auto-detects it (or set `MEXCALL_PUBLIC_URL` to a deployed domain).
+> **Dev note (Recall only):** Recall pushes events to a public webhook. Run
+> `ngrok http 8080` and mex-call auto-detects it (or set `MEXCALL_PUBLIC_URL` to a
+> deployed domain). Vexa needs none of this — it uses an outbound WebSocket.
+
+## Meeting transport
+
+The bot that joins the Meet sits behind a swappable `MeetingTransport` interface,
+so mex-call ships with two. Choose with `--transport` (default `recall`):
+
+| | **Recall.ai** — default | **Vexa** — open option |
+| --- | --- | --- |
+| Model | Closed, paid SaaS | Open-source (Apache-2.0); hosted **or** self-hostable |
+| Setup | One API key | API key (hosted) or your own server (self-host) |
+| Public webhook | Required (ngrok / `MEXCALL_PUBLIC_URL`) | Not needed — outbound WebSocket |
+| Node | 18+ | **22+** (uses the built-in WebSocket) |
+| Maturity | Proven | 🧪 shipped, **not yet live-tested** |
+
+**Recall (default):**
+
+```bash
+echo "RECALL_API_KEY=your-key" > ~/.mex-call.env
+mex-call join <google-meet-link>            # --transport recall is implicit
+```
+
+**Vexa (hosted):** grab a key at [vexa.ai](https://vexa.ai), then:
+
+```bash
+echo "VEXA_API_KEY=your-key" >> ~/.mex-call.env
+mex-call join <google-meet-link> --transport vexa
+```
+
+In the Claude Code plugin, pass the flag the same way:
+`/mex-call:call <google-meet-link> --transport vexa`.
+
+> 🧪 **Vexa is brand new and has not been run against a live Vexa instance yet.**
+> The adapter is wired to Vexa's documented API and the transcript-stabilization
+> logic is unit-tested, but the first real call is the first real test — expect to
+> iron out small mismatches. **Recall stays the recommended, proven default.**
+
+### Self-hosting Vexa (local)
+
+Vexa is the self-hostable option: run your own Vexa server and point mex-call at it.
+
+```bash
+export VEXA_API_KEY=your-local-key
+export VEXA_API_URL=http://localhost:8056     # your Vexa gateway base URL
+mex-call join <google-meet-link> --transport vexa
+```
+
+mex-call derives the WebSocket URL from `VEXA_API_URL` (`http→ws`, `https→wss`) and
+authenticates with `?api_key=`. Two honest caveats so "self-hosted" isn't oversold:
+
+- **Still needs a key.** Vexa's gateway requires an `X-API-Key` even locally.
+- **Local ≠ free/offline.** Vexa's no-GPU self-host still calls back to vexa.ai for
+  transcription; fully offline means running Vexa's own GPU transcription stack
+  (Docker + GPU — real ops). Standing up Vexa is the work; mex-call talking to it is
+  the easy part. See the [Vexa repo](https://github.com/Vexa-ai/vexa) for deployment.
 
 ## How it works
 
 ```
-Recall.ai bot ── joins Meet, visible as "Mex", realtime transcript ──┐
+Recall / Vexa ── joins Meet, visible as "Mex", realtime transcript ──┐
                                                                      ▼
   PASSIVE loop (always on):  transcript → window → compact → shed     (homeostatic memory)
        every 45s / on size:  rolling-summary.md + decisions / action-items / open-questions
@@ -102,8 +160,10 @@ npm install && npm run build && npm link   # global `mex-call`
 
 | Env | Purpose |
 | --- | --- |
-| `RECALL_API_KEY` | Recall API key (server-side secret). |
-| `RECALL_API_URL` | Region base URL. Default `https://us-west-2.recall.ai`. |
+| `RECALL_API_KEY` | Recall API key. Required for `--transport recall` (default). |
+| `RECALL_API_URL` | Recall region base URL. Default `https://us-west-2.recall.ai`. |
+| `VEXA_API_KEY` | Vexa API key (hosted or self-host gateway). Required for `--transport vexa`. |
+| `VEXA_API_URL` | Vexa base URL. Default `https://api.cloud.vexa.ai` (hosted); set to your self-host URL, e.g. `http://localhost:8056`. |
 | `MEXCALL_PUBLIC_URL` | Public webhook URL for production (skips ngrok auto-detect). |
 | `MEXCALL_BRAIN` | Force the brain agent: `claude` or `codex` (default: auto-detect). |
 | `MEXCALL_CODEX_MODEL` | Model for the codex brain (else codex's default). |
@@ -159,6 +219,7 @@ mex-call mex <command>    # any mex command, e.g. `mex-call mex init`, `mex-call
 - **MVP 2 ✅** Active loop — wake phrase "Mex, …" → Claude reads live memory (+ repo `.mex/` context) → answers or logs a decision/action-item → chat reply. Passive loop keeps running throughout.
 - **MVP 3 ✅** `/mex-call <link>` launches the runtime; the session becomes a live, model-free dashboard. Plus `mex-call watch` (terminal) and `mex-call leave`. Packaged as a Claude Code **plugin** (model-invoked how-to skill, user-only launcher, live-stream monitor, self-installing build hook) installable via a marketplace.
 - **MVP 4 ✅** In-call repo actions — "Mex, create an issue / update the docs / open a PR" routes to a tool-enabled action brain (`claude -p` with `gh`/`git`/`Write`/`Edit`, running in the repo) that does the work grounded in live memory and confirms in chat. Plus opt-in post-call artifacts (`--artifacts` → `follow-up-email.md`, `product-signals.md`).
+- **v0.2.0 ✅ 🧪** Second meeting transport — **Vexa** (open-source; hosted or self-hostable) alongside Recall, behind the same `MeetingTransport` interface. Switch with `--transport vexa` (Node 22+). Wired to Vexa's documented API with unit-tested transcript stabilization; **not yet live-tested**. Recall remains the default.
 
 ## License
 
