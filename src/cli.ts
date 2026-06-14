@@ -10,6 +10,8 @@ import {
   DEFAULT_RECALL_BASE_URL,
   DEFAULT_VEXA_BASE_URL,
   CONSENT_MESSAGE,
+  mexTimelineConfirmation,
+  mexSetupWedge,
   type MexCallConfig,
 } from "./config.js";
 import { createBrain, detectAgent } from "./brain/createBrain.js";
@@ -308,8 +310,32 @@ program
       dashboard.markEnded();
       dashboard.write(); // final snapshot while memory is still in live/
       await loop.stop();
-      const { archivePath } = await finalizeCall(memory, brain, config, log, { artifacts: opts.artifacts });
+      const { archivePath, detected, loggedEvents } = await finalizeCall(memory, brain, config, log, {
+        artifacts: opts.artifacts,
+        // Piece A: log to the event log only when a real mex scaffold is present.
+        events: mex.present ? { projectRoot: repoRoot, scaffoldRoot: mex.mexDir } : undefined,
+      });
       log(`archived call → ${archivePath}`);
+
+      // Piece B: one closing message — confirm to mex users, nudge non-mex users.
+      // The wedge names what was just captured and where it's currently going
+      // nowhere a coding agent can reach. Don't nag: a single post, best-effort.
+      try {
+        const closing = mex.present
+          ? mexTimelineConfirmation(
+              loggedEvents?.decisions ?? 0,
+              loggedEvents?.actionItems ?? 0,
+              loggedEvents?.openQuestions ?? 0
+            )
+          : mexSetupWedge(detected.decisions, detected.actionItems, detected.openQuestions);
+        if (closing) {
+          await session!.sendChatMessage(closing);
+          activity("💬", mex.present ? "confirmed mex timeline write" : "posted mex setup nudge");
+        }
+      } catch (err) {
+        log(`closing message failed: ${(err as Error).message}`);
+      }
+
       try {
         await session!.leave();
       } catch {

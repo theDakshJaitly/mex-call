@@ -34,6 +34,8 @@ export interface ActiveLoopDeps {
  */
 export class ActiveLoop {
   private chain: Promise<void> = Promise.resolve();
+  /** Piece C: the "with mex you'd get repo-wide history" note is shown at most once per call. */
+  private ceilingShown = false;
 
   constructor(
     private readonly memory: MeetingMemory,
@@ -95,7 +97,7 @@ export class ActiveLoop {
         return;
       }
 
-      const message = out.message.trim();
+      const message = this.withCeilingNote(out.action, utterance, out.message.trim());
       if (message) {
         await this.deps.sendChatMessage(message, { pinned: false });
         this.log(`replied (${out.action}): ${truncate(message, 80)}`);
@@ -147,10 +149,33 @@ export class ActiveLoop {
     this.log(`repo action done: ${truncate(message, 100)}`);
   }
 
+  /**
+   * Piece C: when no mex scaffold is present and the user asks a memory-shaped
+   * question, the bot can only answer from THIS call — so it names that ceiling,
+   * turning the limitation into a nudge. Kept light: only on plain answers to
+   * clearly memory-shaped questions, and at most once per call.
+   */
+  private withCeilingNote(action: string, utterance: string, message: string): string {
+    if (!message || this.ceilingShown) return message;
+    if (this.deps.mexStatus.present) return message;
+    if (action !== "answer") return message;
+    if (!MEMORY_SHAPED.test(utterance)) return message;
+    this.ceilingShown = true;
+    return (
+      message +
+      ' — note: that\'s from this call only. With mex set up I\'d answer from this repo\'s whole ' +
+      'decision history, not just today. Run "mex-call setup" to wire it in.'
+    );
+  }
+
   private log(msg: string): void {
     this.deps.log?.(msg);
   }
 }
+
+/** Questions about prior decisions/conventions — what the event log would answer. */
+const MEMORY_SHAPED =
+  /\b(decid\w*|decision|convention|agreed?|why did we|what did we|last time|previously|before|in the past|history)\b/i;
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
