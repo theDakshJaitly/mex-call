@@ -98,6 +98,18 @@ export interface ActiveOutput {
   message: string;
 }
 
+/**
+ * Appended to the system prompt for the ACTIVE reply call only (passed per
+ * invocation, so it never affects other Claude usage in the repo). The active
+ * reply is on the latency hot path — everyone in the meeting watches the chat
+ * wait — so we tell the model to answer immediately and emit only the JSON.
+ */
+export const ACTIVE_REPLY_SYSTEM_PROMPT =
+  "You are Mex, replying live in a meeting chat where every second of delay is " +
+  "visible to participants. Answer immediately — do not deliberate, plan, or use " +
+  "tools. Output only the single JSON object requested: no preamble, no markdown, " +
+  "no code fences.";
+
 export function buildActivePrompt(i: ActiveInput): string {
   const repoBlock = i.repoContext
     ? `\n== REPO CONTEXT (from this repo's .mex scaffold; authoritative) ==\n${i.repoContext}\n`

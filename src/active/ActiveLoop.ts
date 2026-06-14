@@ -3,7 +3,7 @@ import type { MeetingMemory } from "../memory/MeetingMemory.js";
 import type { MexCallConfig } from "../config.js";
 import type { TranscriptChunk } from "../types.js";
 import type { MexScaffoldStatus } from "../memory/scaffold.js";
-import { buildActivePrompt, buildActionPrompt, type ActiveOutput } from "../prompts.js";
+import { buildActivePrompt, buildActionPrompt, ACTIVE_REPLY_SYSTEM_PROMPT, type ActiveOutput } from "../prompts.js";
 import { detectWake } from "./wake.js";
 import { readMexContext } from "./mexContext.js";
 
@@ -72,6 +72,7 @@ export class ActiveLoop {
       const raw = await this.brain.run(prompt, {
         model: this.config.activeModel,
         timeoutMs: this.config.brainTimeoutMs,
+        appendSystemPrompt: ACTIVE_REPLY_SYSTEM_PROMPT,
       });
 
       const out = parseActive(raw);
