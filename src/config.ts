@@ -47,7 +47,11 @@ export const DEFAULT_CONFIG: Omit<MexCallConfig, "repoRoot" | "callName"> = {
   windowMaxChars: 4_000,
   compactionIntervalMs: 45_000,
   summarizerModel: "sonnet",
-  activeModel: "sonnet",
+  // Active replies are on the latency hot path (everyone watches the chat wait),
+  // and the task — judge `addressed`, classify intent, write 1–3 sentences from
+  // context we already hand it — doesn't need a frontier model. haiku roughly
+  // halves the round-trip. Override with --active-model sonnet if quality dips.
+  activeModel: "haiku",
   actionModel: "sonnet",
   summaryTargetWords: 350,
   brainTimeoutMs: 120_000,

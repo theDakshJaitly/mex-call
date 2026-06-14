@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import type { Brain } from "./Brain.js";
 import { ClaudeCodeBrain } from "./ClaudeCodeBrain.js";
 import { CodexBrain } from "./CodexBrain.js";
@@ -61,10 +62,18 @@ export function createBrain(o: CreateBrainOptions): Brain {
       sandbox: o.role === "action" ? "workspace-write" : "read-only",
     });
   }
+  const isAction = o.role === "action";
   return new ClaudeCodeBrain({
     model: o.claudeModel,
     timeoutMs: o.timeoutMs,
-    cwd: o.cwd,
-    extraArgs: o.role === "action" ? ["--allowedTools", ...ACTION_ALLOWED_TOOLS] : ["--allowedTools", ""],
+    // The text role (passive compaction + active replies) is pure text→JSON with
+    // no tools, so run it from a neutral cwd and with --strict-mcp-config: it then
+    // never pays to auto-discover the target repo's CLAUDE.md or boot its MCP
+    // servers on every call — a per-invocation latency tax the passive loop pays
+    // on a timer. The action role keeps the repo cwd + repo MCP; it does real work.
+    cwd: isAction ? o.cwd : o.cwd ?? tmpdir(),
+    extraArgs: isAction
+      ? ["--allowedTools", ...ACTION_ALLOWED_TOOLS]
+      : ["--allowedTools", "", "--strict-mcp-config"],
   });
 }

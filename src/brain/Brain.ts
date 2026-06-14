@@ -1,6 +1,8 @@
 /**
- * The single "brain" abstraction. One brain only (Claude Code) — no second
- * fast model, because with voice cut there is no latency budget forcing it.
+ * The single "brain" abstraction. Implementations shell out to a headless coding
+ * agent (Claude Code or Codex) — there is no API key. Latency is tuned per call,
+ * not per brain: the active reply runs on a fast model (config.activeModel) since
+ * the meeting watches the chat wait, while passive compaction can take its time.
  *
  * MVP 0 uses it for the passive loop's compaction + detection (pure text in,
  * JSON out). MVP 2+ will use the same brain — with tools/repo access — for the
