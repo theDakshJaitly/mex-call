@@ -5,7 +5,7 @@ import type { TranscriptChunk } from "../types.js";
 import type { MexScaffoldStatus } from "../memory/scaffold.js";
 import { buildActivePrompt, buildActionPrompt, ACTIVE_REPLY_SYSTEM_PROMPT, type ActiveOutput } from "../prompts.js";
 import { detectWake } from "./wake.js";
-import { readMexContext } from "./mexContext.js";
+import { readMexContext, readMexEventHistory } from "./mexContext.js";
 
 export interface ActiveLoopDeps {
   /** How the bot replies — wired to the transport's pinned-capable chat send. */
@@ -57,6 +57,7 @@ export class ActiveLoop {
   private async handle(utterance: string, speaker: string): Promise<void> {
     try {
       const repoContext = readMexContext(this.deps.repoRoot, this.deps.mexStatus);
+      const repoHistory = readMexEventHistory(this.deps.repoRoot, this.deps.mexStatus);
       const prompt = buildActivePrompt({
         utterance,
         speaker,
@@ -67,6 +68,7 @@ export class ActiveLoop {
         actionItems: this.memory.readActionItems(),
         openQuestions: this.memory.readOpenQuestions(),
         repoContext,
+        repoHistory,
       });
 
       const raw = await this.brain.run(prompt, {

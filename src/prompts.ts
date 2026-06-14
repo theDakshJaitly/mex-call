@@ -86,6 +86,8 @@ export interface ActiveInput {
   openQuestions: string[];
   /** Bounded .mex/context + patterns when a scaffold is present; "" otherwise. */
   repoContext: string;
+  /** Bounded, recent slice of the .mex event log (cross-call decision history); "" otherwise. */
+  repoHistory: string;
 }
 
 export interface ActiveOutput {
@@ -114,6 +116,9 @@ export function buildActivePrompt(i: ActiveInput): string {
   const repoBlock = i.repoContext
     ? `\n== REPO CONTEXT (from this repo's .mex scaffold; authoritative) ==\n${i.repoContext}\n`
     : "";
+  const historyBlock = i.repoHistory
+    ? `\n== PRIOR DECISIONS / HISTORY (from this repo's mex event log; spans PAST calls, newest first) ==\n${i.repoHistory}\n`
+    : "";
   return `You are Mex, an AI agent with a seat in a live meeting. Someone said your name.
 You do NOT speak out loud — you reply in the meeting chat. Replies are PLAIN TEXT
 (no markdown, no hyperlinks — Google Meet renders neither). Be concise: 1–3 sentences.
@@ -136,7 +141,7 @@ ${bullets(i.actionItems)}
 
 == OPEN_QUESTIONS_SO_FAR ==
 ${bullets(i.openQuestions)}
-${repoBlock}
+${repoBlock}${historyBlock}
 Your name "Mex" is frequently mis-transcribed by live speech-to-text (e.g.
 "max", "mecks", "next", "mux"). When one of those appears and the speaker is
 clearly addressing the AI notetaker, treat it as your name. If it's clearly a
@@ -167,6 +172,10 @@ Guidance:
   pagination; include the rationale discussed."); leave message "" (the action is
   carried out separately and writes its own confirmation).
 - A question you can answer from the memory or repo context → action "answer".
+- A question about PRIOR decisions/history — "what did we decide about X?", "did we
+  already agree on Y?", "why did we choose Z?" → action "answer", drawing on PRIOR
+  DECISIONS / HISTORY above. That block spans past calls; cite it when relevant. If
+  it's empty or doesn't cover the question, say so plainly rather than guessing.
 - If "mex" was NOT actually directed at you (mentioned in passing, talking ABOUT mex,
   etc.) → set addressed=false, action "none", item "", message "".
 - Never invent decisions/owners that weren't said. If unsure what to record, use
