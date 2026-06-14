@@ -131,6 +131,7 @@ program
   .option("--active-model <alias>", "Claude model alias for the active loop", DEFAULT_CONFIG.activeModel)
   .option("--action-model <alias>", "Claude model alias for in-call repo actions", DEFAULT_CONFIG.actionModel)
   .option("--no-actions", "disable in-call repo actions (Mex can still answer + log)")
+  .option("--timings", "log a per-stage latency breakdown for each reply (brain vs chat send)")
   .option("--artifacts", "on call end, also generate follow-up-email.md and product-signals.md")
   .option("--brain <agent>", "force the brain agent: claude | codex (default: auto-detect)")
   .action(async (meetUrl: string, opts) => {
@@ -275,6 +276,7 @@ program
       log,
       onActivity: activity,
       actionBrain,
+      timings: Boolean(opts.timings),
     });
 
     // Wire listeners immediately so we don't miss early events. Passive loop
