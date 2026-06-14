@@ -47,11 +47,15 @@ export const DEFAULT_CONFIG: Omit<MexCallConfig, "repoRoot" | "callName"> = {
   windowMaxChars: 4_000,
   compactionIntervalMs: 45_000,
   summarizerModel: "sonnet",
-  // Active replies are on the latency hot path (everyone watches the chat wait),
-  // and the task — judge `addressed`, classify intent, write 1–3 sentences from
-  // context we already hand it — doesn't need a frontier model. haiku roughly
-  // halves the round-trip. Override with --active-model sonnet if quality dips.
-  activeModel: "haiku",
+  // Active replies are on the latency hot path, BUT benchmarking showed haiku is
+  // not the win it looked like: warm, end-to-end it ran ~40% SLOWER than sonnet
+  // (~5.9s vs ~4.2s) because the fixed per-`claude -p` overhead dominates and
+  // haiku's output wasn't quicker. sonnet is also the stronger classifier (more
+  // reliable `repo_action` routing on messy live transcripts). So the active loop
+  // stays on sonnet; the real latency lever is elsewhere — spawn overhead +
+  // STT/transport, which `--timings` exists to expose. Override per call with
+  // --active-model.
+  activeModel: "sonnet",
   actionModel: "sonnet",
   summaryTargetWords: 350,
   brainTimeoutMs: 120_000,
