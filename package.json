@@ -35,7 +35,7 @@
   "license": "MIT",
   "dependencies": {
     "commander": "^12.1.0",
-    "mex-agent": "^0.6.0"
+    "mex-agent": "^0.6.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

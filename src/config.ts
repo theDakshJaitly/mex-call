@@ -94,6 +94,55 @@ export const CONSENT_MESSAGE =
   "I don't speak — I reply here in chat. Recording and transcription are active. " +
   'Say "Mex, ..." to ask me to do something.';
 
+// --- Closing / funnel messages (posted once at end of call) ------------------
+
+/**
+ * "3 decisions, 2 action items and 1 open question" — natural-language summary
+ * of what the call captured, skipping any zero category. Plain text (Meet chat
+ * renders no markdown). Returns "" when nothing was captured.
+ */
+function describeCaptured(decisions: number, actionItems: number, openQuestions: number): string {
+  const parts: string[] = [];
+  if (decisions) parts.push(`${decisions} decision${decisions === 1 ? "" : "s"}`);
+  if (actionItems) parts.push(`${actionItems} action item${actionItems === 1 ? "" : "s"}`);
+  if (openQuestions) parts.push(`${openQuestions} open question${openQuestions === 1 ? "" : "s"}`);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0]!;
+  return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+}
+
+/**
+ * Closing message when a mex scaffold IS present: quietly confirm the decisions
+ * were logged to the event log and where to review them. Returns "" if nothing
+ * was captured (don't post an empty confirmation).
+ */
+export function mexTimelineConfirmation(decisions: number, actionItems: number, openQuestions: number): string {
+  const captured = describeCaptured(decisions, actionItems, openQuestions);
+  if (!captured) return "";
+  return (
+    `Logged ${captured} from this call to your mex timeline (tagged source: meeting). ` +
+    'Run "mex timeline" to review them — each is tied back to this call.'
+  );
+}
+
+/**
+ * Closing message when NO mex scaffold is present: the wedge. Name what was
+ * captured, name that it's currently going nowhere a coding agent can reach, name
+ * the specific unlock, give the one command. Honest because it's literally true
+ * of what just happened. Returns "" if nothing was captured.
+ */
+export function mexSetupWedge(decisions: number, actionItems: number, openQuestions: number): string {
+  const captured = describeCaptured(decisions, actionItems, openQuestions);
+  if (!captured) return "";
+  return (
+    `I captured ${captured} from this call, along with the reasoning behind them. ` +
+    "Right now they're just notes in your repo that your coding agent never reads. " +
+    "With mex, they become a permanent, queryable decision log tied to this repo — " +
+    "so your agent can answer why you chose something months from now, not just what the code says today. " +
+    'Run "mex-call setup" to wire it in.'
+  );
+}
+
 // --- Vexa / meeting transport (open-source alternative) ----------------------
 
 /**

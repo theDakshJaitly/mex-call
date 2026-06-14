@@ -1,8 +1,9 @@
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { Brain } from "./brain/Brain.js";
 import type { MeetingMemory } from "./memory/MeetingMemory.js";
 import type { MexCallConfig } from "./config.js";
+import { writeMeetingEvents, type MeetingEventCounts } from "./memory/events.js";
 import {
   buildFinalSummaryPrompt,
   buildFollowUpEmailPrompt,
@@ -13,11 +14,21 @@ import {
 export interface FinalizeResult {
   archivePath: string;
   archiveName: string;
+  /** How many items were detected this call, by category (for the closing message). */
+  detected: MeetingEventCounts;
+  /** Counts actually written to the mex event log; only set when `events` was passed. */
+  loggedEvents?: MeetingEventCounts;
 }
 
 export interface FinalizeOptions {
   /** Also generate follow-up-email.md and product-signals.md (MVP 4). */
   artifacts?: boolean;
+  /**
+   * When set, also log this call's detected items to mex's event log (Piece A).
+   * Provide ONLY when a real mex scaffold is present. Both paths MUST be absolute:
+   * the target repo's root and its .mex/ dir.
+   */
+  events?: { projectRoot: string; scaffoldRoot: string };
 }
 
 /**
@@ -60,7 +71,36 @@ export async function finalizeCall(
   if (followUp.trim()) writeFileSync(join(archivePath, "follow-up-email.md"), followUp.trim() + "\n");
   if (signals.trim()) writeFileSync(join(archivePath, "product-signals.md"), signals.trim() + "\n");
 
-  return { archivePath, archiveName };
+  const detected: MeetingEventCounts = {
+    decisions: input.decisions.length,
+    actionItems: input.actionItems.length,
+    openQuestions: input.openQuestions.length,
+    total: input.decisions.length + input.actionItems.length + input.openQuestions.length,
+  };
+
+  // Piece A: log to mex's event log when a real scaffold is present. The `trace`
+  // is the repo-relative archive path, tying each event back to this call.
+  let loggedEvents: MeetingEventCounts | undefined;
+  if (opts.events) {
+    try {
+      loggedEvents = writeMeetingEvents({
+        projectRoot: opts.events.projectRoot,
+        scaffoldRoot: opts.events.scaffoldRoot,
+        trace: relative(opts.events.projectRoot, archivePath),
+        decisions: input.decisions,
+        actionItems: input.actionItems,
+        openQuestions: input.openQuestions,
+      });
+      log(
+        `logged ${loggedEvents.total} event(s) to mex timeline ` +
+          `(${loggedEvents.decisions} decisions, ${loggedEvents.actionItems} todos, ${loggedEvents.openQuestions} notes)`
+      );
+    } catch (err) {
+      log(`event-log write failed: ${(err as Error).message} — skipping`);
+    }
+  }
+
+  return { archivePath, archiveName, detected, loggedEvents };
 }
 
 function pad(n: number): string {
