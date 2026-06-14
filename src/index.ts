@@ -34,5 +34,11 @@ export { RealtimeServer } from "./recall/RealtimeServer.js";
 export { loadAvatar, type BotAvatar } from "./recall/avatar.js";
 export { parseTranscriptEvent, parseParticipantEvent } from "./recall/events.js";
 export { resolvePublicUrl } from "./recall/tunnel.js";
+
+// Vexa transport (open-source alternative)
+export { VexaTransport, VexaBotSession } from "./vexa/VexaTransport.js";
+export { VexaClient } from "./vexa/VexaClient.js";
+export { SegmentStabilizer, type VexaSegment } from "./vexa/stabilizer.js";
+export { parseGoogleMeetId, type NativeMeeting } from "./vexa/meetingId.js";
 export { RateLimiter, SerialQueue, sleep } from "./util/RateLimiter.js";
 export { loadEnv } from "./util/env.js";

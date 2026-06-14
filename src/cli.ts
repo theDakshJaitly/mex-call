@@ -8,6 +8,7 @@ import {
   VERSION,
   DEFAULT_BOT_NAME,
   DEFAULT_RECALL_BASE_URL,
+  DEFAULT_VEXA_BASE_URL,
   CONSENT_MESSAGE,
   type MexCallConfig,
 } from "./config.js";
@@ -20,7 +21,8 @@ import { finalizeCall } from "./finalize.js";
 import { loadEnv } from "./util/env.js";
 import { fileURLToPath } from "node:url";
 import { RecallTransport } from "./recall/RecallTransport.js";
-import type { BotSession } from "./transport/MeetingTransport.js";
+import { VexaTransport } from "./vexa/VexaTransport.js";
+import type { BotSession, MeetingTransport } from "./transport/MeetingTransport.js";
 import { Participants } from "./transport/Participants.js";
 import { loadAvatar } from "./recall/avatar.js";
 import { ActiveLoop } from "./active/ActiveLoop.js";
@@ -112,7 +114,7 @@ program
 
 program
   .command("join")
-  .description('Join a Google Meet via Recall: listen, write live memory, and respond to "Mex, …".')
+  .description('Join a Google Meet (Recall or Vexa): listen, write live memory, and respond to "Mex, …".')
   .argument("<meet-url>", "Google Meet link")
   .option("-n, --name <name>", "call name, used for the archived folder", "meet-call")
   .option("-b, --bot-name <name>", "bot display name shown in the meeting", DEFAULT_BOT_NAME)
@@ -120,9 +122,10 @@ program
   .option("-c, --compact <ms>", "ms between rolling-summary compactions", String(DEFAULT_CONFIG.compactionIntervalMs))
   .option("-m, --model <alias>", "Claude model alias for compaction", DEFAULT_CONFIG.summarizerModel)
   .option("-w, --window <chars>", "size trigger for the unsummarized window", String(DEFAULT_CONFIG.windowMaxChars))
-  .option("-p, --port <port>", "local webhook port (0 = OS-assigned)", "8080")
-  .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions", "recallai_streaming")
-  .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable", DEFAULT_AVATAR_PATH)
+  .option("--transport <kind>", "meeting transport: recall | vexa", "recall")
+  .option("-p, --port <port>", "local webhook port (0 = OS-assigned); recall only", "8080")
+  .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions; recall only", "recallai_streaming")
+  .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable; recall only", DEFAULT_AVATAR_PATH)
   .option("--active-model <alias>", "Claude model alias for the active loop", DEFAULT_CONFIG.activeModel)
   .option("--action-model <alias>", "Claude model alias for in-call repo actions", DEFAULT_CONFIG.actionModel)
   .option("--no-actions", "disable in-call repo actions (Mex can still answer + log)")
@@ -134,12 +137,8 @@ program
     loadEnv(resolve(process.cwd(), ".env"));
     loadEnv(resolve(homedir(), ".mex-call.env")); // global fallback so /mex-call works in any repo
 
-    const apiKey = process.env.RECALL_API_KEY;
-    if (!apiKey) {
-      log("RECALL_API_KEY is not set. Add it to .env (RECALL_API_KEY=...) or the environment.");
-      process.exit(1);
-    }
-    const baseUrl = process.env.RECALL_API_URL || DEFAULT_RECALL_BASE_URL;
+    // Per-transport secret validation happens at transport construction below
+    // (so choosing --transport vexa doesn't trip a Recall gate, and vice versa).
 
     const config: MexCallConfig = {
       repoRoot,
@@ -198,18 +197,44 @@ program
       },
     });
 
-    const avatar =
-      opts.avatar && opts.avatar !== "none" ? loadAvatar(resolve(opts.avatar), log) ?? undefined : undefined;
-    if (avatar) log(`bot tile: ${opts.avatar}`);
-
-    const transport = new RecallTransport({
-      apiKey,
-      baseUrl,
-      port: Number(opts.port),
-      transcriptProvider: opts.provider === "meeting_captions" ? "meeting_captions" : "recallai_streaming",
-      avatar,
-      log,
-    });
+    // Transport selection. Recall is the zero-setup default; Vexa is the
+    // open-source option. Each validates its OWN secrets here so neither gate
+    // trips the other. The loops/runtime below depend only on the BotSession
+    // interface, so everything past this point is transport-agnostic.
+    const transportKind = String(opts.transport || "recall").toLowerCase();
+    let transport: MeetingTransport;
+    if (transportKind === "vexa") {
+      const apiKey = process.env.VEXA_API_KEY;
+      if (!apiKey) {
+        log("VEXA_API_KEY is not set. Add it to .env (VEXA_API_KEY=...) or the environment, or use --transport recall.");
+        process.exit(1);
+      }
+      const baseUrl = process.env.VEXA_API_URL || DEFAULT_VEXA_BASE_URL;
+      log(`transport: vexa (${baseUrl})`);
+      transport = new VexaTransport({ apiKey, baseUrl, log });
+    } else if (transportKind === "recall") {
+      const apiKey = process.env.RECALL_API_KEY;
+      if (!apiKey) {
+        log("RECALL_API_KEY is not set. Add it to .env (RECALL_API_KEY=...) or the environment.");
+        process.exit(1);
+      }
+      const baseUrl = process.env.RECALL_API_URL || DEFAULT_RECALL_BASE_URL;
+      const avatar =
+        opts.avatar && opts.avatar !== "none" ? loadAvatar(resolve(opts.avatar), log) ?? undefined : undefined;
+      if (avatar) log(`bot tile: ${opts.avatar}`);
+      log("transport: recall");
+      transport = new RecallTransport({
+        apiKey,
+        baseUrl,
+        port: Number(opts.port),
+        transcriptProvider: opts.provider === "meeting_captions" ? "meeting_captions" : "recallai_streaming",
+        avatar,
+        log,
+      });
+    } else {
+      log(`unknown --transport "${transportKind}" (expected: recall | vexa)`);
+      process.exit(1);
+    }
 
     let session: BotSession | undefined;
     try {
