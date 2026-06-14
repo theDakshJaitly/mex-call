@@ -210,7 +210,13 @@ program
         process.exit(1);
       }
       const baseUrl = process.env.VEXA_API_URL || DEFAULT_VEXA_BASE_URL;
-      log(`transport: vexa (${baseUrl})`);
+      // Honest about the tier: hosted is the realistic "open" path but still an
+      // API key (open-source vendor, not keyless); self-host points at your URL.
+      const tier =
+        baseUrl === DEFAULT_VEXA_BASE_URL
+          ? "hosted (open-source vendor — uses VEXA_API_KEY)"
+          : `self-hosted (${baseUrl})`;
+      log(`transport: vexa — ${tier}`);
       transport = new VexaTransport({ apiKey, baseUrl, log });
     } else if (transportKind === "recall") {
       const apiKey = process.env.RECALL_API_KEY;
