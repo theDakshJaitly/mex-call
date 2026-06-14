@@ -192,6 +192,25 @@ mex-call setup            # runs the bundled `mex setup` in this repo
 mex-call mex <command>    # any mex command, e.g. `mex-call mex init`, `mex-call mex log "..."`
 ```
 
+### Decisions become a queryable history
+
+When a mex scaffold is present, the decisions, action items, and open questions
+detected in the call are also written to mex's **event log**
+(`.mex/events/decisions.jsonl`) — timestamped, tagged `source: meeting`, and
+traced back to the call they came from. Review them anytime:
+
+```bash
+mex-call mex timeline     # or just `mex timeline` if mex is on your PATH
+```
+
+This is deliberately the event log, **not** the knowledge scaffold (`context/`,
+`patterns/`). A decision made in a meeting is *history* — "on this date we
+decided X" — not yet a fact about the code. The scaffold answers "what is the
+codebase now?"; the event log answers "what did we decide, when, and why?" So
+your coding agent can ask why a choice was made months later, without that
+decision ever being mistaken for current code-state. Without a scaffold, the
+same items are still captured under `.mex/meetings/`.
+
 ## Memory layout
 
 ```
@@ -220,6 +239,7 @@ mex-call mex <command>    # any mex command, e.g. `mex-call mex init`, `mex-call
 - **MVP 3 ✅** `/mex-call <link>` launches the runtime; the session becomes a live, model-free dashboard. Plus `mex-call watch` (terminal) and `mex-call leave`. Packaged as a Claude Code **plugin** (model-invoked how-to skill, user-only launcher, live-stream monitor, self-installing build hook) installable via a marketplace.
 - **MVP 4 ✅** In-call repo actions — "Mex, create an issue / update the docs / open a PR" routes to a tool-enabled action brain (`claude -p` with `gh`/`git`/`Write`/`Edit`, running in the repo) that does the work grounded in live memory and confirms in chat. Plus opt-in post-call artifacts (`--artifacts` → `follow-up-email.md`, `product-signals.md`).
 - **v0.2.0 ✅ 🧪** Second meeting transport — **Vexa** (open-source; hosted or self-hostable) alongside Recall, behind the same `MeetingTransport` interface. Switch with `--transport vexa` (Node 22+). Wired to Vexa's documented API with unit-tested transcript stabilization; **not yet live-tested**. Recall remains the default.
+- **v0.3.0 ✅** Decisions to mex's event log — when a mex scaffold is present, detected decisions / action items / open questions are written to `.mex/events/decisions.jsonl` (tagged `source: meeting`, traced to the call) as a queryable history your coding agent can read, distinct from the knowledge scaffold. `mex-call mex timeline` to review.
 
 ## License
 
