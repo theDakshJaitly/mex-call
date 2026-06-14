@@ -22,6 +22,13 @@ export interface ActiveLoopDeps {
    * in the repo with gh/git/Write/Edit. Omit to disable repo actions.
    */
   actionBrain?: Brain;
+  /**
+   * When set, log a per-stage latency breakdown for every "Mex, …" reply
+   * (queue wait, context read, classifier brain, action brain, chat send). Lets
+   * a CLI/dev run see whether the wall-clock is the brain or the transport — see
+   * the `--timings` flag. No effect on behaviour.
+   */
+  timings?: boolean;
 }
 
 /**
@@ -51,10 +58,23 @@ export class ActiveLoop {
     if (!hit) return;
     this.log(`wake heard from ${chunk.speaker}: "${truncate(utterance, 100)}"`);
     this.deps.onActivity?.("🎙", `${chunk.speaker}: "${truncate(utterance, 80)}"`);
-    this.chain = this.chain.catch(() => {}).then(() => this.handle(utterance, chunk.speaker));
+    // enqueuedAt is captured BEFORE the chain wait, so the breakdown can show how
+    // long a reply sat behind an in-flight one (serialization, not the brain).
+    const enqueuedAt = Date.now();
+    this.chain = this.chain.catch(() => {}).then(() => this.handle(utterance, chunk.speaker, enqueuedAt));
   }
 
-  private async handle(utterance: string, speaker: string): Promise<void> {
+  /** Emit a one-line latency breakdown (only when --timings is on). Auto-totals. */
+  private timing(parts: Record<string, number>): void {
+    if (!this.deps.timings) return;
+    const total = Object.values(parts).reduce((a, b) => a + b, 0);
+    const body = Object.entries(parts).map(([k, v]) => `${k}=${v}ms`).join("  ");
+    this.log(`[timing] ${body}  total≈${total}ms`);
+  }
+
+  private async handle(utterance: string, speaker: string, enqueuedAt: number): Promise<void> {
+    const tStart = Date.now();
+    const queueWait = tStart - enqueuedAt;
     try {
       const repoContext = readMexContext(this.deps.repoRoot, this.deps.mexStatus);
       const repoHistory = readMexEventHistory(this.deps.repoRoot, this.deps.mexStatus);
@@ -70,20 +90,25 @@ export class ActiveLoop {
         repoContext,
         repoHistory,
       });
+      const tPrompt = Date.now();
 
       const raw = await this.brain.run(prompt, {
         model: this.config.activeModel,
         timeoutMs: this.config.brainTimeoutMs,
         appendSystemPrompt: ACTIVE_REPLY_SYSTEM_PROMPT,
       });
+      const tClassify = Date.now();
+      const base = { queueWait, context: tPrompt - tStart, classify: tClassify - tPrompt };
 
       const out = parseActive(raw);
       if (!out) {
         this.log("active: could not parse model output — staying silent");
+        this.timing(base);
         return;
       }
       if (!out.addressed) {
         this.log("wake heard but not actually addressed — staying silent");
+        this.timing(base);
         return;
       }
 
@@ -96,16 +121,19 @@ export class ActiveLoop {
       }
 
       if (out.action === "repo_action") {
-        await this.handleRepoAction(out.item);
+        await this.handleRepoAction(out.item, base);
         return;
       }
 
       const message = this.withCeilingNote(out.action, utterance, out.message.trim());
       if (message) {
+        const tBeforeSend = Date.now();
         await this.deps.sendChatMessage(message, { pinned: false });
+        this.timing({ ...base, chatSend: Date.now() - tBeforeSend });
         this.log(`replied (${out.action}): ${truncate(message, 80)}`);
         this.deps.onActivity?.("✅", `replied: ${truncate(message, 80)}`);
       } else {
+        this.timing(base);
         this.log(`action ${out.action} with no message — nothing posted`);
       }
     } catch (err) {
@@ -119,7 +147,7 @@ export class ActiveLoop {
   }
 
   /** MVP 4: hand the task to the tool-enabled action brain (runs in the repo). */
-  private async handleRepoAction(task: string): Promise<void> {
+  private async handleRepoAction(task: string, base: Record<string, number> = {}): Promise<void> {
     if (!this.deps.actionBrain) {
       await this.deps.sendChatMessage("I can't take repo actions in this call (they're turned off).");
       return;
@@ -141,13 +169,16 @@ export class ActiveLoop {
     });
 
     // May throw (timeout, tool error) — the caller's catch posts a fallback.
+    const tAction0 = Date.now();
     const result = await this.deps.actionBrain.run(prompt, {
       model: this.config.actionModel,
       timeoutMs: this.config.actionTimeoutMs,
     });
+    const tAction1 = Date.now();
 
     const message = (result.trim() || "Done.").slice(0, 400);
     await this.deps.sendChatMessage(message, { pinned: false });
+    this.timing({ ...base, action: tAction1 - tAction0, chatSend: Date.now() - tAction1 });
     this.deps.onActivity?.("✅", `repo action: ${truncate(message, 80)}`);
     this.log(`repo action done: ${truncate(message, 100)}`);
   }

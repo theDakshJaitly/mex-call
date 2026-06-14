@@ -153,7 +153,7 @@ The line that addressed you (from ${i.speaker}):
 Decide how to respond, then output ONLY this JSON (no markdown, no code fences):
 {
   "addressed": boolean,
-  "action": "answer" | "log_decision" | "log_action_item" | "log_open_question" | "none",
+  "action": "answer" | "log_decision" | "log_action_item" | "log_open_question" | "repo_action" | "none",
   "item": "string",
   "message": "string"
 }
