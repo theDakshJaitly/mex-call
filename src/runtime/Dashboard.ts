@@ -1,7 +1,12 @@
 import { writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MeetingMemory } from "../memory/MeetingMemory.js";
-import type { Participants } from "../recall/Participants.js";
+import type { Participants } from "../transport/Participants.js";
+import type { TransportStatus } from "../transport/MeetingTransport.js";
+
+/** Display status: the normalized transport status plus the runtime's own
+ * pre-call / wind-down pseudo-states. */
+type DashboardStatus = TransportStatus | "starting" | "ending";
 
 /**
  * Pre-renders a human-readable live dashboard (dashboard.md), a machine status
@@ -25,7 +30,7 @@ interface ActivityEvent {
 const MAX_ACTIVITY = 40;
 
 export class Dashboard {
-  private status = "starting";
+  private status: DashboardStatus = "starting";
   private readonly startedAt = Date.now();
   private endedAt: number | null = null;
   private readonly activity: ActivityEvent[] = [];
@@ -37,7 +42,7 @@ export class Dashboard {
     private readonly participants: Participants
   ) {}
 
-  setStatus(status: string): void {
+  setStatus(status: DashboardStatus): void {
     this.status = status;
   }
 
@@ -145,13 +150,26 @@ function latest(items: string[], n: number): string {
   return more > 0 ? `_…${more} earlier_\n${body}` : body;
 }
 
-function statusBadge(status: string, ended: boolean): string {
+function statusBadge(status: DashboardStatus, ended: boolean): string {
   if (ended) return "⚪ ended";
-  if (status === "in_call_recording") return "🟢 recording";
-  if (status.startsWith("in_call")) return "🟢 in call";
-  if (status === "in_waiting_room") return "🟡 waiting room";
-  if (status === "joining_call") return "🟡 joining";
-  return `⚪ ${status}`;
+  switch (status) {
+    case "recording":
+      return "🟢 recording";
+    case "in_call":
+      return "🟢 in call";
+    case "waiting_room":
+      return "🟡 waiting room";
+    case "joining":
+      return "🟡 joining";
+    case "failed":
+      return "🔴 failed";
+    case "ending":
+      return "⏹ ending";
+    case "ended":
+      return "⚪ ended";
+    case "starting":
+      return "⚪ starting";
+  }
 }
 
 function pad(n: number): string {

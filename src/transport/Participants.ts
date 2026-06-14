@@ -1,9 +1,10 @@
 import type { ParticipantEvent } from "../types.js";
 
 /**
- * Tracks who is/was in the call from Recall participant events and renders
- * participants.md. Kept separate from the transcript so the active loop (MVP 2)
- * can read a clean roster.
+ * Tracks who is/was in the call from transport ParticipantEvents and renders
+ * participants.md. Transport-neutral (consumes only ParticipantEvent), so it
+ * lives in transport/ rather than under any one vendor's adapter. Kept separate
+ * from the transcript so the active loop can read a clean roster.
  */
 export class Participants {
   private readonly present = new Map<string, { joinedAt: number }>();

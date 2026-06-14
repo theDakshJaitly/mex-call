@@ -1,7 +1,8 @@
 // Public API surface for mex-call (MVP 0).
 export type { TranscriptChunk, ParticipantEvent, TranscriptSource } from "./types.js";
-export type { MeetingTransport, BotSession } from "./transport/MeetingTransport.js";
+export type { MeetingTransport, BotSession, TransportStatus } from "./transport/MeetingTransport.js";
 export type { SttSource } from "./transport/SttSource.js";
+export { Participants } from "./transport/Participants.js";
 export type { Brain, BrainRunOptions } from "./brain/Brain.js";
 export { ClaudeCodeBrain } from "./brain/ClaudeCodeBrain.js";
 export { CodexBrain } from "./brain/CodexBrain.js";
@@ -30,7 +31,6 @@ export {
 export { RecallTransport, RecallBotSession } from "./recall/RecallTransport.js";
 export { RecallClient } from "./recall/RecallClient.js";
 export { RealtimeServer } from "./recall/RealtimeServer.js";
-export { Participants } from "./recall/Participants.js";
 export { loadAvatar, type BotAvatar } from "./recall/avatar.js";
 export { parseTranscriptEvent, parseParticipantEvent } from "./recall/events.js";
 export { resolvePublicUrl } from "./recall/tunnel.js";

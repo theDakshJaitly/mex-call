@@ -1,4 +1,4 @@
-import type { MeetingTransport, BotSession } from "../transport/MeetingTransport.js";
+import type { MeetingTransport, BotSession, TransportStatus } from "../transport/MeetingTransport.js";
 import type { TranscriptChunk, ParticipantEvent } from "../types.js";
 import { RecallClient } from "./RecallClient.js";
 import { RealtimeServer } from "./RealtimeServer.js";
@@ -79,11 +79,22 @@ const IN_CALL_STATUSES = new Set([
 ]);
 const ENDED_STATUSES = new Set(["call_ended", "done", "fatal", "recording_done", "media_expired"]);
 
+/** Map Recall's raw bot-status codes to the vendor-neutral TransportStatus. */
+function mapRecallStatus(raw: string): TransportStatus {
+  if (raw === "fatal") return "failed";
+  if (ENDED_STATUSES.has(raw)) return "ended";
+  if (raw === "in_call_recording") return "recording";
+  if (raw === "in_waiting_room") return "waiting_room";
+  if (IN_CALL_STATUSES.has(raw) || raw.startsWith("in_call")) return "in_call";
+  // ready / joining_call / and any not-yet-in-call code
+  return "joining";
+}
+
 export class RecallBotSession implements BotSession {
   private transcriptCb: ((c: TranscriptChunk) => void) | null = null;
   private participantCb: ((p: ParticipantEvent) => void) | null = null;
   private endCb: (() => void) | null = null;
-  private statusCb: ((status: string) => void) | null = null;
+  private statusCb: ((status: TransportStatus) => void) | null = null;
 
   private poller: NodeJS.Timeout | null = null;
   private lastStatus = "";
@@ -132,7 +143,7 @@ export class RecallBotSession implements BotSession {
   onCallEnd(cb: () => void): void {
     this.endCb = cb;
   }
-  onStatus(cb: (status: string) => void): void {
+  onStatus(cb: (status: TransportStatus) => void): void {
     this.statusCb = cb;
   }
   /** Resolves once the bot is admitted and in the call (so chat sends will work). */
@@ -175,7 +186,10 @@ export class RecallBotSession implements BotSession {
       if (bot.status && bot.status !== this.lastStatus) {
         this.lastStatus = bot.status;
         this.log(`bot status: ${bot.status}`);
-        this.statusCb?.(bot.status);
+        // End-detection stays per-adapter and keys on Recall's raw status sets;
+        // only the OUTGOING status is normalized so the dashboard never sees
+        // Recall's vocabulary.
+        this.statusCb?.(mapRecallStatus(bot.status));
         if (IN_CALL_STATUSES.has(bot.status)) this.markInCall();
         if (ENDED_STATUSES.has(bot.status)) this.markEnded();
       }

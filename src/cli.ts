@@ -19,8 +19,9 @@ import { PassiveLoop } from "./loops/PassiveLoop.js";
 import { finalizeCall } from "./finalize.js";
 import { loadEnv } from "./util/env.js";
 import { fileURLToPath } from "node:url";
-import { RecallTransport, type RecallBotSession } from "./recall/RecallTransport.js";
-import { Participants } from "./recall/Participants.js";
+import { RecallTransport } from "./recall/RecallTransport.js";
+import type { BotSession } from "./transport/MeetingTransport.js";
+import { Participants } from "./transport/Participants.js";
 import { loadAvatar } from "./recall/avatar.js";
 import { ActiveLoop } from "./active/ActiveLoop.js";
 import { runMex } from "./mex/runMex.js";
@@ -210,7 +211,7 @@ program
       log,
     });
 
-    let session: RecallBotSession | undefined;
+    let session: BotSession | undefined;
     try {
       session = await transport.join(meetUrl, { botName: opts.botName });
     } catch (err) {
