@@ -1,4 +1,4 @@
-export const VERSION = "0.4.0";
+export const VERSION = "0.4.1";
 
 /** The bot/brand/wake phrase. Deliberately fixed — do not rename (see build doc). */
 export const WAKE_WORD = "mex";
