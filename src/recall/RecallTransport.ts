@@ -12,8 +12,10 @@ export interface RecallTransportOptions {
   baseUrl?: string;
   /** Local port for the webhook server (0 = OS-assigned). */
   port?: number;
-  transcriptProvider?: "recallai_streaming" | "meeting_captions";
+  transcriptProvider?: "recallai_streaming" | "meeting_captions" | "assembly_ai_v3_streaming";
   languageCode?: string;
+  /** Terms to bias the STT toward (assembly_ai_v3_streaming only). */
+  keyterms?: string[];
   /** Camera-tile image (base64 JPEG). Omit for no custom tile. */
   avatar?: { kind: "jpeg"; b64Data: string };
   log?: (msg: string) => void;
@@ -35,6 +37,7 @@ export class RecallTransport implements MeetingTransport {
       port: o.port ?? 0,
       transcriptProvider: o.transcriptProvider ?? "recallai_streaming",
       languageCode: o.languageCode ?? "en",
+      keyterms: o.keyterms ?? [],
       avatar: o.avatar,
       log: o.log ?? (() => {}),
     };
@@ -59,6 +62,7 @@ export class RecallTransport implements MeetingTransport {
         webhookUrl,
         transcriptProvider: this.opts.transcriptProvider,
         languageCode: this.opts.languageCode,
+        keyterms: this.opts.keyterms,
         events: RECALL_REALTIME_EVENTS,
         avatar: this.opts.avatar,
       });

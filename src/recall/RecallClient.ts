@@ -42,9 +42,16 @@ export interface CreateBotOptions {
   meetingUrl: string;
   botName: string;
   webhookUrl: string;
-  transcriptProvider: "recallai_streaming" | "meeting_captions";
+  transcriptProvider: "recallai_streaming" | "meeting_captions" | "assembly_ai_v3_streaming";
   languageCode: string;
   events: string[];
+  /**
+   * Terms to bias the STT engine toward (assembly_ai_v3_streaming only → AssemblyAI
+   * `keyterms_prompt`). This is the CORRECT spelling we want surfaced (e.g. "Mex") —
+   * the opposite of the WAKE_WORDS alias list, which matches the mis-hearings after
+   * the fact. Ignored by the other providers.
+   */
+  keyterms?: string[];
   /** Optional camera-tile image (base64 JPEG) shown in the participant list. */
   avatar?: { kind: "jpeg"; b64Data: string };
 }
@@ -53,6 +60,51 @@ export interface RecallBot {
   id: string;
   status: string;
   raw: any;
+}
+
+/**
+ * Build the Create-Bot request body. Pure (no I/O) so the provider/keyterms mapping
+ * is assertable offline via `npx tsx` without hitting Recall (CLAUDE.md test pattern).
+ */
+export function buildBotBody(opts: CreateBotOptions): Record<string, unknown> {
+  const avatarOutput = opts.avatar
+    ? {
+        automatic_video_output: {
+          in_call_recording: { kind: opts.avatar.kind, b64_data: opts.avatar.b64Data },
+          in_call_not_recording: { kind: opts.avatar.kind, b64_data: opts.avatar.b64Data },
+        },
+      }
+    : {};
+
+  return {
+    meeting_url: opts.meetingUrl,
+    bot_name: opts.botName,
+    ...avatarOutput,
+    recording_config: {
+      transcript: {
+        provider: transcriptProviderConfig(opts),
+        diarization: { use_separate_streams_when_available: true },
+      },
+      realtime_endpoints: [{ type: "webhook", url: opts.webhookUrl, events: opts.events }],
+    },
+  };
+}
+
+/** The provider-specific block under recording_config.transcript.provider. */
+function transcriptProviderConfig(opts: CreateBotOptions): Record<string, unknown> {
+  switch (opts.transcriptProvider) {
+    case "meeting_captions":
+      return { meeting_captions: {} };
+    case "assembly_ai_v3_streaming":
+      // keyterms_prompt biases AssemblyAI Universal-Streaming toward our terms ("Mex").
+      // Omit the key when empty so we never send `keyterms_prompt: []`.
+      return {
+        assembly_ai_v3_streaming: opts.keyterms?.length ? { keyterms_prompt: opts.keyterms } : {},
+      };
+    case "recallai_streaming":
+    default:
+      return { recallai_streaming: { mode: "prioritize_low_latency", language_code: opts.languageCode } };
+  }
 }
 
 type Limiter = "create" | "general";
@@ -82,31 +134,7 @@ export class RecallClient {
   }
 
   async createBot(opts: CreateBotOptions): Promise<RecallBot> {
-    const avatarOutput = opts.avatar
-      ? {
-          automatic_video_output: {
-            in_call_recording: { kind: opts.avatar.kind, b64_data: opts.avatar.b64Data },
-            in_call_not_recording: { kind: opts.avatar.kind, b64_data: opts.avatar.b64Data },
-          },
-        }
-      : {};
-
-    const body = {
-      meeting_url: opts.meetingUrl,
-      bot_name: opts.botName,
-      ...avatarOutput,
-      recording_config: {
-        transcript: {
-          provider:
-            opts.transcriptProvider === "recallai_streaming"
-              ? { recallai_streaming: { mode: "prioritize_low_latency", language_code: opts.languageCode } }
-              : { meeting_captions: {} },
-          diarization: { use_separate_streams_when_available: true },
-        },
-        realtime_endpoints: [{ type: "webhook", url: opts.webhookUrl, events: opts.events }],
-      },
-    };
-    const json = await this.request("POST", "/api/v1/bot/", body, "create");
+    const json = await this.request("POST", "/api/v1/bot/", buildBotBody(opts), "create");
     return toBot(json);
   }
 

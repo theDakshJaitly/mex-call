@@ -9,6 +9,7 @@ import {
   DEFAULT_BOT_NAME,
   DEFAULT_RECALL_BASE_URL,
   DEFAULT_VEXA_BASE_URL,
+  ASSEMBLY_KEYTERMS,
   CONSENT_MESSAGE,
   mexTimelineConfirmation,
   mexSetupWedge,
@@ -28,6 +29,7 @@ import type { BotSession, MeetingTransport } from "./transport/MeetingTransport.
 import { Participants } from "./transport/Participants.js";
 import { loadAvatar } from "./recall/avatar.js";
 import { ActiveLoop } from "./active/ActiveLoop.js";
+import { detectWake } from "./active/wake.js";
 import { runMex } from "./mex/runMex.js";
 import { Dashboard } from "./runtime/Dashboard.js";
 
@@ -126,12 +128,14 @@ program
   .option("-w, --window <chars>", "size trigger for the unsummarized window", String(DEFAULT_CONFIG.windowMaxChars))
   .option("--transport <kind>", "meeting transport: recall | vexa", "recall")
   .option("-p, --port <port>", "local webhook port (0 = OS-assigned); recall only", "8080")
-  .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions; recall only", "recallai_streaming")
+  .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions | assembly; recall only", "recallai_streaming")
   .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable; recall only", DEFAULT_AVATAR_PATH)
   .option("--active-model <alias>", "Claude model alias for the active loop", DEFAULT_CONFIG.activeModel)
   .option("--action-model <alias>", "Claude model alias for in-call repo actions", DEFAULT_CONFIG.actionModel)
   .option("--no-actions", "disable in-call repo actions (Mex can still answer + log)")
   .option("--timings", "log a per-stage latency breakdown for each reply (brain vs chat send)")
+  .option("--keyterms <csv>", "comma-separated terms to bias the STT toward (--provider assembly only)")
+  .option("--log-transcripts", "log every finalized transcript line + whether it matched the wake word (STT A/B)")
   .option("--artifacts", "on call end, also generate follow-up-email.md and product-signals.md")
   .option("--brain <agent>", "force the brain agent: claude | codex (default: auto-detect)")
   .action(async (meetUrl: string, opts) => {
@@ -232,11 +236,24 @@ program
         opts.avatar && opts.avatar !== "none" ? loadAvatar(resolve(opts.avatar), log) ?? undefined : undefined;
       if (avatar) log(`bot tile: ${opts.avatar}`);
       log("transport: recall");
+      const recallProvider =
+        opts.provider === "meeting_captions"
+          ? "meeting_captions"
+          : opts.provider === "assembly"
+            ? "assembly_ai_v3_streaming"
+            : "recallai_streaming";
+      const keyterms = opts.keyterms
+        ? String(opts.keyterms).split(",").map((s) => s.trim()).filter(Boolean)
+        : ASSEMBLY_KEYTERMS;
+      if (recallProvider === "assembly_ai_v3_streaming") {
+        log(`stt: AssemblyAI v3 streaming (keyterms: ${keyterms.join(", ") || "none"})`);
+      }
       transport = new RecallTransport({
         apiKey,
         baseUrl,
         port: Number(opts.port),
-        transcriptProvider: opts.provider === "meeting_captions" ? "meeting_captions" : "recallai_streaming",
+        transcriptProvider: recallProvider,
+        keyterms,
         avatar,
         log,
       });
@@ -282,6 +299,10 @@ program
     // Wire listeners immediately so we don't miss early events. Passive loop
     // (always) + active loop (only on the "Mex, …" wake phrase) both see finals.
     session.onTranscript((chunk) => {
+      if (opts.logTranscripts && chunk.isFinal) {
+        const wake = detectWake(chunk.text).hit ? "yes" : "no";
+        log(`[stt] final ${chunk.speaker}: "${chunk.text}" wake=${wake}`);
+      }
       loop.ingest(chunk);
       activeLoop.consider(chunk);
     });

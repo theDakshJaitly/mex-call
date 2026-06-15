@@ -16,6 +16,14 @@ export const WAKE_WORD = "mex";
 export const WAKE_WORDS = ["mex", "max", "mix", "mux", "mecks", "meks", "macks", "maex"];
 export const LEADING_WAKE_WORDS = ["next", "nex"];
 
+/**
+ * Terms fed to AssemblyAI's `keyterms_prompt` (the `assembly_ai_v3_streaming` STT
+ * provider) to bias the engine toward the CORRECT spelling of the wake word. This is
+ * the inverse of WAKE_WORDS: we boost what we WANT transcribed ("Mex"), not the
+ * mis-hearings we tolerate. Override per call with `--keyterms`.
+ */
+export const ASSEMBLY_KEYTERMS = ["Mex"];
+
 export interface MexCallConfig {
   /** Repo the conversation is about. Memory is written under <repoRoot>/.mex/meetings/. */
   repoRoot: string;
