@@ -1,7 +1,7 @@
 {
   "name": "mex-call",
   "description": "Send a notetaker bot into a Google Meet that turns the conversation into structured, agent-readable memory in your repo, and responds when someone says \"Mex, …\".",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": { "name": "Daksh Jaitly" },
   "homepage": "https://github.com/theDakshJaitly/mex-call",
   "license": "MIT",
