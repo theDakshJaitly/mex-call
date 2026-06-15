@@ -126,6 +126,7 @@ export class AssemblyAiStreamingClient {
 
     ws.addEventListener("open", () => {
       this.opened = true;
+      this.log(`connected (flushing ${this.pending.length} buffered frame(s))`);
       for (const frame of this.pending) ws.send(frame);
       this.pending = [];
     });

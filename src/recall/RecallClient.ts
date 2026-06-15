@@ -52,6 +52,12 @@ export interface CreateBotOptions {
    * the fact. Ignored by the other providers.
    */
   keyterms?: string[];
+  /**
+   * When set, stream raw MIXED audio to this websocket URL instead of having Recall
+   * transcribe — used by the native AssemblyAI SttSource. Recall connects to this URL
+   * and pushes `audio_mixed_raw.data`. No transcript provider is configured in this mode.
+   */
+  audioWsUrl?: string;
   /** Optional camera-tile image (base64 JPEG) shown in the participant list. */
   avatar?: { kind: "jpeg"; b64Data: string };
 }
@@ -76,17 +82,31 @@ export function buildBotBody(opts: CreateBotOptions): Record<string, unknown> {
       }
     : {};
 
+  // Native STT: stream mixed audio to our websocket; no Recall transcription. Keep the
+  // webhook for participant events. Otherwise: Recall transcribes via the chosen provider.
+  const recording_config = opts.audioWsUrl
+    ? {
+        audio_mixed_raw: {},
+        realtime_endpoints: [
+          // Native mode configures NO transcript artifact, so the webhook must not
+          // subscribe to transcript.* events (Recall 400s otherwise) — participant events only.
+          { type: "webhook", url: opts.webhookUrl, events: opts.events.filter((e) => !e.startsWith("transcript")) },
+          { type: "websocket", url: opts.audioWsUrl, events: ["audio_mixed_raw.data"] },
+        ],
+      }
+    : {
+        transcript: {
+          provider: transcriptProviderConfig(opts),
+          diarization: { use_separate_streams_when_available: true },
+        },
+        realtime_endpoints: [{ type: "webhook", url: opts.webhookUrl, events: opts.events }],
+      };
+
   return {
     meeting_url: opts.meetingUrl,
     bot_name: opts.botName,
     ...avatarOutput,
-    recording_config: {
-      transcript: {
-        provider: transcriptProviderConfig(opts),
-        diarization: { use_separate_streams_when_available: true },
-      },
-      realtime_endpoints: [{ type: "webhook", url: opts.webhookUrl, events: opts.events }],
-    },
+    recording_config,
   };
 }
 

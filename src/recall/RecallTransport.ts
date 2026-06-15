@@ -1,5 +1,5 @@
 import type { MeetingTransport, BotSession, TransportStatus } from "../transport/MeetingTransport.js";
-import type { TranscriptChunk, ParticipantEvent } from "../types.js";
+import type { TranscriptChunk, ParticipantEvent, AudioFrame } from "../types.js";
 import { RecallClient } from "./RecallClient.js";
 import { RealtimeServer } from "./RealtimeServer.js";
 import { resolvePublicUrl } from "./tunnel.js";
@@ -16,6 +16,12 @@ export interface RecallTransportOptions {
   languageCode?: string;
   /** Terms to bias the STT toward (assembly_ai_v3_streaming only). */
   keyterms?: string[];
+  /**
+   * Stream raw mixed audio to a local websocket instead of having Recall transcribe —
+   * the bot's audio then drives an in-process STT source (native AssemblyAI). The
+   * session exposes the frames via onAudio().
+   */
+  nativeStt?: boolean;
   /** Camera-tile image (base64 JPEG). Omit for no custom tile. */
   avatar?: { kind: "jpeg"; b64Data: string };
   log?: (msg: string) => void;
@@ -38,6 +44,7 @@ export class RecallTransport implements MeetingTransport {
       transcriptProvider: o.transcriptProvider ?? "recallai_streaming",
       languageCode: o.languageCode ?? "en",
       keyterms: o.keyterms ?? [],
+      nativeStt: o.nativeStt ?? false,
       avatar: o.avatar,
       log: o.log ?? (() => {}),
     };
@@ -54,6 +61,10 @@ export class RecallTransport implements MeetingTransport {
     const webhookUrl = publicBase + server.path;
     log(`public webhook (${source}): ${publicBase}${server.path.replace(/\/[^/]+$/, "/…")}`);
 
+    // Native STT: Recall streams mixed audio to a WS on the same tunnel (http→ws).
+    const audioWsUrl = this.opts.nativeStt ? publicBase.replace(/^http/i, "ws") + server.audioPath : undefined;
+    if (audioWsUrl) log(`audio ws (native STT): ${audioWsUrl.replace(/\/[^/]+$/, "/…")}`);
+
     let bot;
     try {
       bot = await this.client.createBot({
@@ -63,6 +74,7 @@ export class RecallTransport implements MeetingTransport {
         transcriptProvider: this.opts.transcriptProvider,
         languageCode: this.opts.languageCode,
         keyterms: this.opts.keyterms,
+        audioWsUrl,
         events: RECALL_REALTIME_EVENTS,
         avatar: this.opts.avatar,
       });
@@ -97,6 +109,7 @@ function mapRecallStatus(raw: string): TransportStatus {
 export class RecallBotSession implements BotSession {
   private transcriptCb: ((c: TranscriptChunk) => void) | null = null;
   private participantCb: ((p: ParticipantEvent) => void) | null = null;
+  private audioCb: ((frame: AudioFrame) => void) | null = null;
   private endCb: (() => void) | null = null;
   private statusCb: ((status: TransportStatus) => void) | null = null;
 
@@ -115,6 +128,10 @@ export class RecallBotSession implements BotSession {
   ) {
     this.inCallPromise = new Promise((resolve) => (this.inCallResolve = resolve));
     this.server.onEvent((payload) => this.dispatch(payload));
+    this.server.onAudio((frame) => {
+      this.markInCall();
+      this.audioCb?.(frame);
+    });
     this.startPolling();
   }
 
@@ -125,6 +142,9 @@ export class RecallBotSession implements BotSession {
   }
   onParticipantChange(cb: (p: ParticipantEvent) => void): void {
     this.participantCb = cb;
+  }
+  onAudio(cb: (frame: AudioFrame) => void): void {
+    this.audioCb = cb;
   }
 
   async sendChatMessage(text: string, opts: { pinned?: boolean } = {}): Promise<void> {
