@@ -23,7 +23,14 @@ it in any repo:
 
 ```bash
 echo "RECALL_API_KEY=your-key" > ~/.mex-call.env
+
+# Optional but recommended — much better wake-word ("Mex") + transcription accuracy.
+# When set, mex-call auto-uses AssemblyAI for speech-to-text (see "Sharper transcription" below).
+echo "ASSEMBLYAI_API_KEY=your-key" >> ~/.mex-call.env
 ```
+
+`RECALL_API_KEY` is required (the bot transport); `ASSEMBLYAI_API_KEY` is optional — set it
+for the best transcription, or skip it and mex-call uses Recall's built-in STT.
 
 ### Claude Code → plugin
 
@@ -63,6 +70,20 @@ Override with `--provider`:
 - **`recallai_streaming`** — Recall's built-in STT (keeps per-speaker labels).
 - **`assembly`** — Recall-managed AssemblyAI; add your key in the [Recall dashboard](https://us-west-2.recall.ai/dashboard/transcription) (per region). Keeps speaker labels.
 - **`native`** — force the env-key AssemblyAI client explicitly.
+
+### Useful flags
+
+`mex-call join <link>` accepts (run `mex-call join --help` for the full list):
+
+| Flag | What it does |
+| --- | --- |
+| `--provider <p>` | STT: `native` / `recallai_streaming` / `meeting_captions` / `assembly`. Default: AssemblyAI when `ASSEMBLYAI_API_KEY` is set, else `recallai_streaming`. |
+| `--keyterms <csv>` | Terms to bias AssemblyAI toward (default: `Mex`), e.g. `--keyterms "Mex,Mexcall"`. |
+| `--active-model <alias>` | Model for the "Mex, …" reply (default `sonnet`). |
+| `--transport <kind>` | `recall` (default) or `vexa`. |
+| `--no-actions` | Disable in-call repo actions (Mex can still answer + log). |
+| `--timings` | Log a per-reply latency breakdown (queue wait / brain / chat send). |
+| `--log-transcripts` | Log every finalized transcript line + whether it matched the wake word. |
 
 ## Meeting transport
 
