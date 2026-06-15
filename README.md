@@ -47,6 +47,19 @@ Claude Code vs. Codex.
 > `ngrok http 8080` and mex-call auto-detects it (or set `MEXCALL_PUBLIC_URL` to a
 > deployed domain). Vexa needs none of this — it uses an outbound WebSocket.
 
+### Sharper transcription + wake word (AssemblyAI)
+
+Recall's default speech-to-text often mis-hears the "Mex" wake word. For markedly
+better accuracy, use **AssemblyAI** with the wake word primed as a keyterm (Recall only):
+
+- **`mex-call join <link> --provider assembly`** — Recall routes its audio through
+  AssemblyAI. Add your AssemblyAI key in the [Recall dashboard](https://us-west-2.recall.ai/dashboard/transcription)
+  (per region). Keeps Recall's per-speaker labels.
+- **`mex-call join <link> --provider native`** 🧪 — mex-call runs its own AssemblyAI
+  streaming client from the bot's raw audio; just set `ASSEMBLYAI_API_KEY` (in `.env` or
+  `~/.mex-call.env`) — no Recall dashboard. Mixed audio for now, so speakers read
+  "Unknown" (per-participant labels coming next).
+
 ## Meeting transport
 
 The bot that joins the Meet sits behind a swappable `MeetingTransport` interface,
@@ -242,6 +255,7 @@ same items are still captured under `.mex/meetings/`.
 - **v0.3.0 ✅** Decisions to mex's event log — when a mex scaffold is present, detected decisions / action items / open questions are written to `.mex/events/decisions.jsonl` (tagged `source: meeting`, traced to the call) as a queryable history your coding agent can read, distinct from the knowledge scaffold. `mex-call mex timeline` to review.
 - **v0.4.0 ✅** History-aware replies — when a mex scaffold is present, the active loop reads a bounded slice of the event log so "Mex, …" can answer cross-call questions ("what did we decide about X?", "did we already agree on Y?") from the repo's real decision history, not just the current call. (Also strips per-call repo/MCP overhead from the no-tools brain.)
 - **v0.4.1 ✅** Latency correctness + diagnostics — reverted the active reply to `sonnet` after benchmarking showed the v0.4.0 `haiku` experiment was ~40% *slower* end-to-end and misrouted in-call repo actions; hardened `repo_action` classification (added to the JSON schema, not just the prose); and added `mex-call join --timings` to break down per-reply latency (queue wait vs brain vs chat send).
+- **v0.5.0 ✅** AssemblyAI speech-to-text (opt-in) — primes the "Mex" wake word as a keyterm, fixing Recall's frequent mis-hearings and lifting general accuracy. `--provider assembly` routes Recall's audio through AssemblyAI (dashboard key, keeps speaker labels); `--provider native` 🧪 runs mex-call's own AssemblyAI streaming client from raw meeting audio with just `ASSEMBLYAI_API_KEY` (no Recall dashboard; mixed-audio for now, per-participant speaker labels next). Default stays `recallai_streaming`.
 
 ## License
 
