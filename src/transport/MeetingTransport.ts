@@ -1,4 +1,4 @@
-import type { TranscriptChunk, ParticipantEvent } from "../types.js";
+import type { TranscriptChunk, ParticipantEvent, AudioFrame } from "../types.js";
 
 /**
  * Abstracts the meeting bot. Recall is the first implementation (MVP 1); Vexa is
@@ -32,6 +32,12 @@ export interface BotSession {
   /** Speaker-attributed realtime transcript. */
   onTranscript(cb: (chunk: TranscriptChunk) => void): void;
   onParticipantChange(cb: (p: ParticipantEvent) => void): void;
+  /**
+   * Raw audio frames, when the transport streams audio for an in-process STT source
+   * (Recall native AssemblyAI). Optional — transports that produce their own transcripts
+   * (Vexa) omit it.
+   */
+  onAudio?(cb: (frame: AudioFrame) => void): void;
   /** Output channel. `pinned` requests persistent visibility to latecomers; a
    * transport without true pinning (e.g. Vexa) honors it via re-posting. */
   sendChatMessage(text: string, opts?: { pinned?: boolean }): Promise<void>;

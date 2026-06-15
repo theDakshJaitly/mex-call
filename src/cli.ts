@@ -9,6 +9,7 @@ import {
   DEFAULT_BOT_NAME,
   DEFAULT_RECALL_BASE_URL,
   DEFAULT_VEXA_BASE_URL,
+  ASSEMBLY_KEYTERMS,
   CONSENT_MESSAGE,
   mexTimelineConfirmation,
   mexSetupWedge,
@@ -28,6 +29,9 @@ import type { BotSession, MeetingTransport } from "./transport/MeetingTransport.
 import { Participants } from "./transport/Participants.js";
 import { loadAvatar } from "./recall/avatar.js";
 import { ActiveLoop } from "./active/ActiveLoop.js";
+import { detectWake } from "./active/wake.js";
+import { AssemblyAiSttSource } from "./stt/AssemblyAiSttSource.js";
+import type { TranscriptChunk } from "./types.js";
 import { runMex } from "./mex/runMex.js";
 import { Dashboard } from "./runtime/Dashboard.js";
 
@@ -126,12 +130,14 @@ program
   .option("-w, --window <chars>", "size trigger for the unsummarized window", String(DEFAULT_CONFIG.windowMaxChars))
   .option("--transport <kind>", "meeting transport: recall | vexa", "recall")
   .option("-p, --port <port>", "local webhook port (0 = OS-assigned); recall only", "8080")
-  .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions; recall only", "recallai_streaming")
+  .option("--provider <p>", "transcript provider: recallai_streaming (default) | meeting_captions | assembly | native (own AssemblyAI client, needs ASSEMBLYAI_API_KEY); recall only", "recallai_streaming")
   .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable; recall only", DEFAULT_AVATAR_PATH)
   .option("--active-model <alias>", "Claude model alias for the active loop", DEFAULT_CONFIG.activeModel)
   .option("--action-model <alias>", "Claude model alias for in-call repo actions", DEFAULT_CONFIG.actionModel)
   .option("--no-actions", "disable in-call repo actions (Mex can still answer + log)")
   .option("--timings", "log a per-stage latency breakdown for each reply (brain vs chat send)")
+  .option("--keyterms <csv>", "comma-separated terms to bias the STT toward (--provider assembly only)")
+  .option("--log-transcripts", "log every finalized transcript line + whether it matched the wake word (STT A/B)")
   .option("--artifacts", "on call end, also generate follow-up-email.md and product-signals.md")
   .option("--brain <agent>", "force the brain agent: claude | codex (default: auto-detect)")
   .action(async (meetUrl: string, opts) => {
@@ -206,6 +212,10 @@ program
     // interface, so everything past this point is transport-agnostic.
     const transportKind = String(opts.transport || "recall").toLowerCase();
     let transport: MeetingTransport;
+    // Native AssemblyAI STT (Recall only): when set, the transport streams raw audio and
+    // this in-process source transcribes it. Resolved in the recall branch below.
+    let nativeStt = false;
+    let sttSource: AssemblyAiSttSource | undefined;
     if (transportKind === "vexa") {
       const apiKey = process.env.VEXA_API_KEY;
       if (!apiKey) {
@@ -232,11 +242,41 @@ program
         opts.avatar && opts.avatar !== "none" ? loadAvatar(resolve(opts.avatar), log) ?? undefined : undefined;
       if (avatar) log(`bot tile: ${opts.avatar}`);
       log("transport: recall");
+      // Provider resolution: explicit --provider wins; otherwise default to native
+      // AssemblyAI when ASSEMBLYAI_API_KEY is set (friction-free, no Recall dashboard),
+      // else Recall's recallai_streaming. `assembly` is the Recall-managed AssemblyAI path.
+      const assemblyKey = process.env.ASSEMBLYAI_API_KEY;
+      const explicitProvider = opts.provider as string | undefined;
+      // Native STT (our own AssemblyAI client, env-key, no Recall dashboard) is OPT-IN via
+      // `--provider native` for now: phase 1 uses mixed audio, so speakers are "Unknown".
+      // It can become the smart default once phase 2 (per-participant streams) restores labels.
+      nativeStt = explicitProvider === "native";
+      if (nativeStt && !assemblyKey) {
+        log("--provider native needs ASSEMBLYAI_API_KEY (set it in your repo .env or ~/.mex-call.env).");
+        process.exit(1);
+      }
+      const recallProvider =
+        explicitProvider === "meeting_captions"
+          ? "meeting_captions"
+          : explicitProvider === "assembly"
+            ? "assembly_ai_v3_streaming"
+            : "recallai_streaming";
+      const keyterms = opts.keyterms
+        ? String(opts.keyterms).split(",").map((s) => s.trim()).filter(Boolean)
+        : ASSEMBLY_KEYTERMS;
+      if (nativeStt) {
+        log(`stt: native AssemblyAI (keyterms: ${keyterms.join(", ") || "none"}) — speakers unattributed until phase 2`);
+        sttSource = new AssemblyAiSttSource({ apiKey: assemblyKey!, keyterms, log });
+      } else if (recallProvider === "assembly_ai_v3_streaming") {
+        log(`stt: AssemblyAI v3 streaming via Recall dashboard (keyterms: ${keyterms.join(", ") || "none"})`);
+      }
       transport = new RecallTransport({
         apiKey,
         baseUrl,
         port: Number(opts.port),
-        transcriptProvider: opts.provider === "meeting_captions" ? "meeting_captions" : "recallai_streaming",
+        transcriptProvider: recallProvider,
+        keyterms,
+        nativeStt,
         avatar,
         log,
       });
@@ -281,10 +321,26 @@ program
 
     // Wire listeners immediately so we don't miss early events. Passive loop
     // (always) + active loop (only on the "Mex, …" wake phrase) both see finals.
-    session.onTranscript((chunk) => {
+    const handleTranscript = (chunk: TranscriptChunk) => {
+      if (opts.logTranscripts && chunk.isFinal) {
+        const wake = detectWake(chunk.text).hit ? "yes" : "no";
+        log(`[stt] final ${chunk.speaker}: "${chunk.text}" wake=${wake}`);
+      }
       loop.ingest(chunk);
       activeLoop.consider(chunk);
-    });
+    };
+    if (nativeStt && sttSource && session.onAudio) {
+      // Transcripts come from our in-process AssemblyAI client, fed by the bot's audio.
+      sttSource.onTranscript(handleTranscript);
+      let audioFrames = 0;
+      session.onAudio((frame) => {
+        if (audioFrames++ === 0) log(`audio: receiving from Recall (first frame ${frame.pcm.length} bytes) — native STT live`);
+        sttSource!.pushAudio(frame.pcm, { speaker: frame.speaker, timestampMs: Date.now() });
+      });
+      await sttSource.start();
+    } else {
+      session.onTranscript(handleTranscript);
+    }
     session.onParticipantChange((ev) => {
       if (participants.applyAndChanged(ev)) {
         memory.writeParticipants(participants.render());
@@ -312,6 +368,7 @@ program
       dashboard.markEnded();
       dashboard.write(); // final snapshot while memory is still in live/
       await loop.stop();
+      await sttSource?.stop(); // close native AssemblyAI sockets, if any
       const { archivePath, detected, loggedEvents } = await finalizeCall(memory, brain, config, log, {
         artifacts: opts.artifacts,
         // Piece A: log to the event log only when a real mex scaffold is present.

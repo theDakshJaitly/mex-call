@@ -20,6 +20,16 @@ export interface ParticipantEvent {
 }
 
 /**
+ * A raw audio frame from a transport that streams audio (Recall's realtime audio
+ * websocket) for an in-process STT source to transcribe. PCM is 16-bit LE, 16 kHz
+ * mono. `speaker` is set for per-participant streams; undefined for mixed audio.
+ */
+export interface AudioFrame {
+  pcm: Uint8Array;
+  speaker?: string;
+}
+
+/**
  * The minimal surface the passive loop consumes from any transcript producer.
  * Both the MVP 0 SimulatedTranscriptSource and the MVP 1 Recall BotSession
  * satisfy this, so the loops never depend on the transport.
