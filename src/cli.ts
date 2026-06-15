@@ -130,7 +130,7 @@ program
   .option("-w, --window <chars>", "size trigger for the unsummarized window", String(DEFAULT_CONFIG.windowMaxChars))
   .option("--transport <kind>", "meeting transport: recall | vexa", "recall")
   .option("-p, --port <port>", "local webhook port (0 = OS-assigned); recall only", "8080")
-  .option("--provider <p>", "transcript provider: recallai_streaming | meeting_captions | assembly (default: native AssemblyAI if ASSEMBLYAI_API_KEY set, else recallai_streaming); recall only")
+  .option("--provider <p>", "transcript provider: recallai_streaming (default) | meeting_captions | assembly | native (own AssemblyAI client, needs ASSEMBLYAI_API_KEY); recall only", "recallai_streaming")
   .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable; recall only", DEFAULT_AVATAR_PATH)
   .option("--active-model <alias>", "Claude model alias for the active loop", DEFAULT_CONFIG.activeModel)
   .option("--action-model <alias>", "Claude model alias for in-call repo actions", DEFAULT_CONFIG.actionModel)
@@ -247,7 +247,14 @@ program
       // else Recall's recallai_streaming. `assembly` is the Recall-managed AssemblyAI path.
       const assemblyKey = process.env.ASSEMBLYAI_API_KEY;
       const explicitProvider = opts.provider as string | undefined;
-      nativeStt = !explicitProvider && Boolean(assemblyKey);
+      // Native STT (our own AssemblyAI client, env-key, no Recall dashboard) is OPT-IN via
+      // `--provider native` for now: phase 1 uses mixed audio, so speakers are "Unknown".
+      // It can become the smart default once phase 2 (per-participant streams) restores labels.
+      nativeStt = explicitProvider === "native";
+      if (nativeStt && !assemblyKey) {
+        log("--provider native needs ASSEMBLYAI_API_KEY (set it in your repo .env or ~/.mex-call.env).");
+        process.exit(1);
+      }
       const recallProvider =
         explicitProvider === "meeting_captions"
           ? "meeting_captions"
@@ -258,7 +265,7 @@ program
         ? String(opts.keyterms).split(",").map((s) => s.trim()).filter(Boolean)
         : ASSEMBLY_KEYTERMS;
       if (nativeStt) {
-        log(`stt: native AssemblyAI via ASSEMBLYAI_API_KEY (keyterms: ${keyterms.join(", ") || "none"})`);
+        log(`stt: native AssemblyAI (keyterms: ${keyterms.join(", ") || "none"}) — speakers unattributed until phase 2`);
         sttSource = new AssemblyAiSttSource({ apiKey: assemblyKey!, keyterms, log });
       } else if (recallProvider === "assembly_ai_v3_streaming") {
         log(`stt: AssemblyAI v3 streaming via Recall dashboard (keyterms: ${keyterms.join(", ") || "none"})`);
