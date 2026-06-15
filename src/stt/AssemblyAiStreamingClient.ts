@@ -1,18 +1,21 @@
 /**
  * Client for AssemblyAI Universal-Streaming v3 (`wss://streaming.assemblyai.com/v3/ws`).
  * We open this OUTBOUND socket and push 16 kHz mono S16LE PCM frames (the exact format
- * Recall delivers), priming the engine with `keyterms_prompt` (e.g. "Mex"). Uses Node's
- * built-in WebSocket (Node 22+) — same zero-dep approach as the Vexa transport, so no `ws`
- * package. The Recall AUDIO RECEIVER (Recall connecting to us) is a separate concern that
- * does need a WS server.
+ * Recall delivers), priming the engine with `keyterms_prompt` (e.g. "Mex").
  *
- * Wire protocol (verified against AssemblyAI docs):
- * - Auth + config are query params: ApiKey, sample_rate, encoding=pcm_s16le, format_turns,
- *   speech_model, keyterms_prompt (comma-separated).
+ * Uses the `ws` package (already a dep for the audio server) rather than Node's built-in
+ * WebSocket because AssemblyAI v3 requires the API key in an `Authorization` HEADER — the
+ * WHATWG built-in can't set request headers, but `ws` can.
+ *
+ * Wire protocol (verified against AssemblyAI docs + live errors):
+ * - Auth: `Authorization: <api-key>` header (NOT a query param).
+ * - Config is query params: sample_rate, encoding=pcm_s16le, format_turns, speech_model,
+ *   keyterms_prompt (comma-separated).
  * - Audio is sent as RAW BINARY PCM frames (50–1000 ms each), not JSON/base64.
  * - The server sends JSON messages; `type:"Turn"` carries `transcript` (text) and
- *   `end_of_turn` (finality). Begin/Termination/etc. are ignored here.
+ *   `end_of_turn` (finality). Begin/Termination/Error are surfaced via the log.
  */
+import WebSocket, { type RawData } from "ws";
 
 const STREAMING_URL = "wss://streaming.assemblyai.com/v3/ws";
 const DEFAULT_SAMPLE_RATE = 16_000;
@@ -38,8 +41,8 @@ export interface AssemblyAiTurn {
 }
 
 /**
- * Build the streaming connection URL with all query params. Pure → offline-testable.
- * `ApiKey` is set last so callers can redact everything before it when logging.
+ * Build the streaming connection URL with config query params (no secret — the API key
+ * goes in the Authorization header). Pure → offline-testable.
  */
 export function buildStreamingUrl(o: AssemblyAiClientOptions): string {
   const u = new URL(STREAMING_URL);
@@ -47,19 +50,14 @@ export function buildStreamingUrl(o: AssemblyAiClientOptions): string {
   u.searchParams.set("encoding", "pcm_s16le");
   u.searchParams.set("format_turns", String(o.formatTurns ?? true));
   u.searchParams.set("speech_model", o.speechModel ?? DEFAULT_SPEECH_MODEL);
-  if (o.keyterms?.length) u.searchParams.set("keyterms_prompt", o.keyterms.join(","));
-  u.searchParams.set("ApiKey", o.apiKey);
+  // keyterms_prompt is a JSON-encoded array (e.g. ["Mex"]) — NOT comma-separated.
+  if (o.keyterms?.length) u.searchParams.set("keyterms_prompt", JSON.stringify(o.keyterms));
   return u.toString();
-}
-
-/** Redact the ApiKey query param for safe logging. */
-export function redactUrl(url: string): string {
-  return url.replace(/([?&]ApiKey=)[^&]*/i, "$1***");
 }
 
 /**
  * Parse an AssemblyAI server message into a transcript update. Returns null for
- * non-Turn messages (Begin/Termination/etc.) and unparseable input. Pure → testable.
+ * non-Turn messages (Begin/Termination/Error) and unparseable input. Pure → testable.
  */
 export function parseAssemblyMessage(raw: string): AssemblyAiTurn | null {
   let msg: { type?: string; transcript?: unknown; end_of_turn?: unknown };
@@ -75,37 +73,13 @@ export function parseAssemblyMessage(raw: string): AssemblyAiTurn | null {
   };
 }
 
-// --- minimal binary-capable WHATWG WebSocket typing (built-in global, Node 22+) ------
-
-interface BinaryWS {
-  send(data: ArrayBufferView | ArrayBuffer | string): void;
-  close(code?: number, reason?: string): void;
-  readonly readyState: number;
-  addEventListener(
-    type: "open" | "message" | "close" | "error",
-    listener: (ev: { data?: unknown; code?: number; reason?: string }) => void
-  ): void;
-}
-type BinaryWSCtor = { new (url: string): BinaryWS };
-const WS_OPEN = 1;
-
-function resolveWsCtor(): BinaryWSCtor {
-  const ctor = (globalThis as unknown as { WebSocket?: BinaryWSCtor }).WebSocket;
-  if (!ctor) {
-    throw new Error(
-      "Native AssemblyAI STT needs a built-in WebSocket (Node 22+). Upgrade Node, or use a Recall-managed provider (--provider assembly / recallai_streaming)."
-    );
-  }
-  return ctor;
-}
-
 /**
  * One streaming session. Open with start(), feed PCM with sendAudio(), receive turns via
  * the onTurn callback, end with stop(). Audio sent before the socket opens is buffered
  * (bounded) so we never drop the first words of an utterance.
  */
 export class AssemblyAiStreamingClient {
-  private ws: BinaryWS | null = null;
+  private ws: WebSocket | null = null;
   private opened = false;
   private closed = false;
   /** Frames queued before the socket is open. Bounded to avoid unbounded growth on a stalled connect. */
@@ -118,35 +92,41 @@ export class AssemblyAiStreamingClient {
   ) {}
 
   start(): void {
-    const Ctor = resolveWsCtor();
     const url = buildStreamingUrl(this.opts);
-    this.log(`connecting: ${redactUrl(url)}`);
-    const ws = new Ctor(url);
+    this.log(`connecting: ${url}`);
+    const ws = new WebSocket(url, { headers: { Authorization: this.opts.apiKey } });
     this.ws = ws;
 
-    ws.addEventListener("open", () => {
+    ws.on("open", () => {
       this.opened = true;
       this.log(`connected (flushing ${this.pending.length} buffered frame(s))`);
       for (const frame of this.pending) ws.send(frame);
       this.pending = [];
     });
-    ws.addEventListener("message", (ev) => {
-      if (typeof ev.data !== "string") return; // AssemblyAI sends JSON text
-      const turn = parseAssemblyMessage(ev.data);
-      if (turn) this.onTurn(turn);
+    ws.on("message", (data: RawData) => {
+      const text = Array.isArray(data) ? Buffer.concat(data).toString() : data.toString();
+      const turn = parseAssemblyMessage(text);
+      if (turn) {
+        this.onTurn(turn);
+        return;
+      }
+      // Non-Turn (Begin / Termination / Error) — surface for debugging. AssemblyAI
+      // explains a rejection here before closing, so don't swallow it.
+      this.log(`msg: ${text.slice(0, 300)}`);
     });
-    ws.addEventListener("close", (ev) => {
+    ws.on("close", (code: number, reason: Buffer) => {
       this.opened = false;
       this.closed = true;
-      this.log(`closed${ev.code ? ` (${ev.code})` : ""}`);
+      const r = reason?.length ? `: ${reason.toString()}` : "";
+      this.log(`closed${code ? ` (${code})` : ""}${r}`);
     });
-    ws.addEventListener("error", () => this.log("socket error"));
+    ws.on("error", (err: Error) => this.log(`socket error: ${err.message}`));
   }
 
   /** Feed one PCM frame (16-bit LE, the configured sample rate). */
   sendAudio(pcm: Uint8Array): void {
     if (this.closed) return;
-    if (this.opened && this.ws && this.ws.readyState === WS_OPEN) {
+    if (this.opened && this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(pcm);
     } else if (this.pending.length < AssemblyAiStreamingClient.MAX_PENDING) {
       this.pending.push(pcm);
