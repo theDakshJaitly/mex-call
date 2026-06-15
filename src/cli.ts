@@ -10,6 +10,7 @@ import {
   DEFAULT_RECALL_BASE_URL,
   DEFAULT_VEXA_BASE_URL,
   ASSEMBLY_KEYTERMS,
+  resolveStt,
   CONSENT_MESSAGE,
   mexTimelineConfirmation,
   mexSetupWedge,
@@ -130,7 +131,7 @@ program
   .option("-w, --window <chars>", "size trigger for the unsummarized window", String(DEFAULT_CONFIG.windowMaxChars))
   .option("--transport <kind>", "meeting transport: recall | vexa", "recall")
   .option("-p, --port <port>", "local webhook port (0 = OS-assigned); recall only", "8080")
-  .option("--provider <p>", "transcript provider: recallai_streaming (default) | meeting_captions | assembly | native (own AssemblyAI client, needs ASSEMBLYAI_API_KEY); recall only", "recallai_streaming")
+  .option("--provider <p>", "transcript provider: native (own AssemblyAI; default when ASSEMBLYAI_API_KEY set) | recallai_streaming (default otherwise) | meeting_captions | assembly (Recall-managed AssemblyAI); recall only")
   .option("--avatar <path>", "JPEG (16:9) shown as the bot's tile; 'none' to disable; recall only", DEFAULT_AVATAR_PATH)
   .option("--active-model <alias>", "Claude model alias for the active loop", DEFAULT_CONFIG.activeModel)
   .option("--action-model <alias>", "Claude model alias for in-call repo actions", DEFAULT_CONFIG.actionModel)
@@ -242,33 +243,31 @@ program
         opts.avatar && opts.avatar !== "none" ? loadAvatar(resolve(opts.avatar), log) ?? undefined : undefined;
       if (avatar) log(`bot tile: ${opts.avatar}`);
       log("transport: recall");
-      // Provider resolution: explicit --provider wins; otherwise default to native
-      // AssemblyAI when ASSEMBLYAI_API_KEY is set (friction-free, no Recall dashboard),
-      // else Recall's recallai_streaming. `assembly` is the Recall-managed AssemblyAI path.
+      // STT resolution (see resolveStt): no --provider → native AssemblyAI when
+      // ASSEMBLYAI_API_KEY is set (best accuracy), else recallai_streaming + a nudge.
       const assemblyKey = process.env.ASSEMBLYAI_API_KEY;
       const explicitProvider = opts.provider as string | undefined;
-      // Native STT (our own AssemblyAI client, env-key, no Recall dashboard) is OPT-IN via
-      // `--provider native` for now: phase 1 uses mixed audio, so speakers are "Unknown".
-      // It can become the smart default once phase 2 (per-participant streams) restores labels.
-      nativeStt = explicitProvider === "native";
+      const stt = resolveStt(explicitProvider, Boolean(assemblyKey));
+      nativeStt = stt.nativeStt;
+      const recallProvider = stt.recallProvider;
       if (nativeStt && !assemblyKey) {
         log("--provider native needs ASSEMBLYAI_API_KEY (set it in your repo .env or ~/.mex-call.env).");
         process.exit(1);
       }
-      const recallProvider =
-        explicitProvider === "meeting_captions"
-          ? "meeting_captions"
-          : explicitProvider === "assembly"
-            ? "assembly_ai_v3_streaming"
-            : "recallai_streaming";
       const keyterms = opts.keyterms
         ? String(opts.keyterms).split(",").map((s) => s.trim()).filter(Boolean)
         : ASSEMBLY_KEYTERMS;
       if (nativeStt) {
-        log(`stt: native AssemblyAI (keyterms: ${keyterms.join(", ") || "none"}) — speakers unattributed until phase 2`);
+        const why = explicitProvider ? "" : " — default (ASSEMBLYAI_API_KEY set)";
+        log(`stt: native AssemblyAI (keyterms: ${keyterms.join(", ") || "none"})${why}; speakers unattributed until phase 2`);
         sttSource = new AssemblyAiSttSource({ apiKey: assemblyKey!, keyterms, log });
       } else if (recallProvider === "assembly_ai_v3_streaming") {
         log(`stt: AssemblyAI v3 streaming via Recall dashboard (keyterms: ${keyterms.join(", ") || "none"})`);
+      } else {
+        log(`stt: ${recallProvider} (Recall built-in)`);
+        if (stt.nudgeSetKey) {
+          log('💡 Set ASSEMBLYAI_API_KEY (repo .env or ~/.mex-call.env) for much better wake-word ("Mex") accuracy — it auto-switches to AssemblyAI.');
+        }
       }
       transport = new RecallTransport({
         apiKey,

@@ -49,16 +49,20 @@ Claude Code vs. Codex.
 
 ### Sharper transcription + wake word (AssemblyAI)
 
-Recall's default speech-to-text often mis-hears the "Mex" wake word. For markedly
-better accuracy, use **AssemblyAI** with the wake word primed as a keyterm (Recall only):
+Recall's built-in speech-to-text often mis-hears the "Mex" wake word. **AssemblyAI** —
+with the wake word primed as a keyterm — fixes that and markedly improves general
+accuracy (Recall transport only).
 
-- **`mex-call join <link> --provider assembly`** — Recall routes its audio through
-  AssemblyAI. Add your AssemblyAI key in the [Recall dashboard](https://us-west-2.recall.ai/dashboard/transcription)
-  (per region). Keeps Recall's per-speaker labels.
-- **`mex-call join <link> --provider native`** 🧪 — mex-call runs its own AssemblyAI
-  streaming client from the bot's raw audio; just set `ASSEMBLYAI_API_KEY` (in `.env` or
-  `~/.mex-call.env`) — no Recall dashboard. Mixed audio for now, so speakers read
-  "Unknown" (per-participant labels coming next).
+**Just set `ASSEMBLYAI_API_KEY`** (in your repo `.env` or `~/.mex-call.env`) and mex-call
+uses AssemblyAI **automatically** — no flag, no Recall dashboard. mex-call runs its own
+AssemblyAI streaming client from the bot's raw audio. (Currently mixed audio, so
+transcripts read speaker "Unknown" — per-participant labels are coming.) Without the key,
+it falls back to Recall's `recallai_streaming` and nudges you to set it.
+
+Override with `--provider`:
+- **`recallai_streaming`** — Recall's built-in STT (keeps per-speaker labels).
+- **`assembly`** — Recall-managed AssemblyAI; add your key in the [Recall dashboard](https://us-west-2.recall.ai/dashboard/transcription) (per region). Keeps speaker labels.
+- **`native`** — force the env-key AssemblyAI client explicitly.
 
 ## Meeting transport
 

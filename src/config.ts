@@ -101,6 +101,35 @@ export const RECALL_REALTIME_EVENTS = [
   "participant_events.update",
 ];
 
+export interface SttResolution {
+  /** Use our own in-process AssemblyAI client (native path). */
+  nativeStt: boolean;
+  /** Recall's transcript provider when NOT native. */
+  recallProvider: "recallai_streaming" | "meeting_captions" | "assembly_ai_v3_streaming";
+  /** Nudge the user that setting ASSEMBLYAI_API_KEY would improve accuracy. */
+  nudgeSetKey: boolean;
+}
+
+/**
+ * Resolve which STT to use for a Recall call. Pure → offline-testable.
+ *
+ * Default (no `--provider`): native AssemblyAI when ASSEMBLYAI_API_KEY is set — much
+ * better wake-word ("Mex") + general accuracy — otherwise Recall's recallai_streaming.
+ * Explicit `--provider` always wins: `native` (own client), `assembly` (Recall-managed
+ * AssemblyAI), `meeting_captions`, or `recallai_streaming`.
+ */
+export function resolveStt(provider: string | undefined, hasAssemblyKey: boolean): SttResolution {
+  const nativeStt = provider === "native" || (!provider && hasAssemblyKey);
+  const recallProvider =
+    provider === "meeting_captions"
+      ? "meeting_captions"
+      : provider === "assembly"
+        ? "assembly_ai_v3_streaming"
+        : "recallai_streaming";
+  const usingAssembly = nativeStt || recallProvider === "assembly_ai_v3_streaming";
+  return { nativeStt, recallProvider, nudgeSetKey: !hasAssemblyKey && !usingAssembly };
+}
+
 /**
  * Consent message, posted pinned on join (required — see build doc). Plain text
  * only: Google Meet chat does not render markdown or hyperlinks.
