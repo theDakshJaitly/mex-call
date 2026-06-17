@@ -1,6 +1,6 @@
 {
   "name": "mex-call",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Claude Code, now in your Google Meet — a bot that turns the conversation into structured, agent-readable memory in your repo, with the memory and context powers of mex. Works with Claude Code (plugin) and Codex (CLI).",
   "type": "module",
   "bin": {

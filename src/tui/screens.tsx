@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { spawnSync } from "node:child_process";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import { buildMarkdownReport } from "./meter.js";
+import { Banner, BANNER_WIDTH } from "./banner.js";
 import {
   gatherDoctorReport,
   smokeTestAssemblyAi,
@@ -67,11 +68,18 @@ export function Menu(props: {
 // --- Home --------------------------------------------------------------------
 
 export function Home(props: { onSelect: (v: string) => void }): React.ReactElement {
+  const { stdout } = useStdout();
+  const wideEnough = (stdout?.columns ?? 80) >= BANNER_WIDTH + 2;
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text bold color="cyan">
-        🎙  mex-call
-      </Text>
+      {wideEnough ? (
+        <Banner />
+      ) : (
+        <Text bold>
+          🎙  <Text color="#4169E1">mex</Text>
+          <Text color="green">-Call</Text>
+        </Text>
+      )}
       <Text dimColor>live meeting agent → structured, agent-readable repo memory</Text>
       <Box marginTop={1}>
         <Menu
