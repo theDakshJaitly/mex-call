@@ -4,6 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2022"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
     "declaration": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
