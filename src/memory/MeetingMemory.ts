@@ -150,6 +150,30 @@ export class MeetingMemory {
     appendFileSync(this.path(file), lines + "\n");
   }
 
+  /**
+   * Edit or remove the `index`-th item (in file order, matching readList) of a
+   * captured list. Empty `text` removes the line; otherwise the bullet's
+   * [HH:MM:SS] timestamp is preserved and only the text is replaced. The manual
+   * safety net behind the TUI's edit/promote (Slice 4). No-op if out of range.
+   */
+  editListItem(kind: "decision" | "action" | "question", index: number, text: string): void {
+    const file =
+      kind === "decision" ? LIVE_FILES.decisions : kind === "action" ? LIVE_FILES.actionItems : LIVE_FILES.openQuestions;
+    const content = this.safeRead(file);
+    if (!content) return;
+    const lines = content.split("\n");
+    const bulletIdxs = lines.map((l, i) => (l.trim().startsWith("- ") ? i : -1)).filter((i) => i >= 0);
+    const target = bulletIdxs[index];
+    if (target == null) return;
+    if (!text.trim()) {
+      lines.splice(target, 1);
+    } else {
+      const prefix = /^(\s*- \[\d{2}:\d{2}:\d{2}\]\s*)/.exec(lines[target]!);
+      lines[target] = (prefix ? prefix[1] : "- ") + text.trim();
+    }
+    writeFileSync(this.path(file), lines.join("\n"));
+  }
+
   // --- Participants (stub for MVP 0; populated from Recall events in MVP 1) ----
 
   writeParticipants(text: string): void {

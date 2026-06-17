@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { resolve, join } from "node:path";
-import { existsSync, writeFileSync, unlinkSync, readFileSync } from "node:fs";
+import { existsSync, writeFileSync, unlinkSync, readFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { Command } from "commander";
 import {
@@ -35,6 +35,8 @@ import { AssemblyAiSttSource } from "./stt/AssemblyAiSttSource.js";
 import type { TranscriptChunk } from "./types.js";
 import { runMex } from "./mex/runMex.js";
 import { Dashboard } from "./runtime/Dashboard.js";
+import { ControlServer } from "./control/ControlServer.js";
+import { controlSocketPath } from "./control/protocol.js";
 
 // Bundled Mex logo (assets/ ships with the package; ../ resolves the same from
 // both dist/cli.js and src/cli.ts since each sits one level under the root).
@@ -314,6 +316,15 @@ program
       getParticipants: () => participants.render(),
       log,
       onActivity: activity,
+      // Append each wake consideration to a tailable JSONL for the TUI's
+      // wake-replay view (best-effort; lives under live/ so it archives too).
+      onWakeEvent: (ev) => {
+        try {
+          appendFileSync(join(memory.liveDir, "wake-log.jsonl"), JSON.stringify(ev) + "\n");
+        } catch {
+          /* best-effort */
+        }
+      },
       actionBrain,
       timings: Boolean(opts.timings),
     });
@@ -352,6 +363,9 @@ program
       activity("🔄", `status: ${status}`);
     });
 
+    // Control socket (additive to runtime.pid/SIGINT): started below, stopped here.
+    let controlServer: ControlServer | undefined;
+
     let finalizing = false;
     const finalize = async (reason: string) => {
       if (finalizing) return;
@@ -362,6 +376,7 @@ program
       } catch {
         /* ignore */
       }
+      await controlServer?.stop();
       dashboard.setStatus("ending");
       dashboard.add("⏹", `finalizing (${reason})`);
       dashboard.markEnded();
@@ -405,6 +420,46 @@ program
     session.onCallEnd(() => void finalize("call ended"));
     process.on("SIGINT", () => void finalize("SIGINT"));
     process.on("SIGTERM", () => void finalize("SIGTERM"));
+
+    // Control socket: lets the TUI drive this runtime (type-to-Mex, send-chat,
+    // force-summary, leave) with delivery confirmation. Best-effort — if it can't
+    // bind, the call still runs headless and `leave`/SIGINT still work.
+    controlServer = new ControlServer(
+      controlSocketPath(process.pid),
+      {
+        injectMexCommand: (text) => activeLoop.injectCommand(text),
+        sendChat: async (text) => {
+          await session!.sendChatMessage(text, { pinned: false });
+          activity("💬", `operator → chat: ${text.slice(0, 80)}`);
+        },
+        forceSummary: () => void loop.kick({ force: true, reason: "control" }),
+        promoteItem: (text, kind) => {
+          if (kind === "decision") memory.appendDecisions([text]);
+          else if (kind === "action") memory.appendActionItems([text]);
+          else memory.appendOpenQuestions([text]);
+          activity("📝", `promoted to ${kind}: ${text.slice(0, 70)}`);
+        },
+        editItem: (kind, index, text) => {
+          memory.editListItem(kind, index, text);
+          activity("✏️", text ? `edited ${kind} #${index + 1}` : `removed ${kind} #${index + 1}`);
+          dashboard.write();
+        },
+        // Ack immediately, then finalize on the next tick so the confirmation is
+        // delivered before finalize tears the socket down (and calls process.exit).
+        leave: () => {
+          setImmediate(() => void finalize("leave via control"));
+          return { message: "leaving — archiving the call" };
+        },
+      },
+      log
+    );
+    controlServer.start().then(
+      () => log(`control socket: ${controlSocketPath(process.pid)}`),
+      (err: unknown) => {
+        controlServer = undefined;
+        log(`control socket unavailable (${(err as Error).message}) — headless control still works via 'leave'`);
+      }
+    );
 
     loop.start();
 
@@ -493,6 +548,22 @@ program
   .action(async (args: string[] = []) => {
     process.exit(await runMex(args, process.cwd()));
   });
+
+// Default entry: bare `mex-call` (no subcommand) → the live TUI command centre.
+// All subcommands above stay exactly as they are for scripted/headless/CI use.
+program.action(async () => {
+  // TTY guard (required): never dump ANSI into a pipe/log/CI. No interactive
+  // terminal → tell the user the headless path and exit, don't render.
+  if (!process.stdout.isTTY) {
+    process.stderr.write(
+      "No interactive terminal detected — use `mex-call join <link>` for headless use.\n"
+    );
+    process.exit(1);
+  }
+  // Lazy import so headless subcommands never load React/Ink.
+  const { runTui } = await import("./tui/main.js");
+  await runTui({ repo: process.cwd(), port: 8080 });
+});
 
 program.parseAsync(process.argv).catch((err) => {
   log(`fatal: ${(err as Error).message}`);

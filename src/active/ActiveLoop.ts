@@ -7,6 +7,23 @@ import { buildActivePrompt, buildActionPrompt, ACTIVE_REPLY_SYSTEM_PROMPT, type 
 import { detectWake } from "./wake.js";
 import { readMexContext, readMexEventHistory } from "./mexContext.js";
 
+/**
+ * One wake consideration, emitted for the TUI's wake-replay / "why didn't Mex
+ * respond?" view (Slice 4). Turns a silent baffling failure into a legible one:
+ * what STT actually heard + whether it was addressed + what it classified as.
+ */
+export interface WakeEvent {
+  ts: number;
+  speaker: string;
+  /** The utterance that tripped the wake matcher (mangled STT and all). */
+  utterance: string;
+  source: "voice" | "typed";
+  addressed: boolean;
+  action: string;
+  /** "addressed" = acted on · "ignored" = heard but not directed at the bot · "error" = couldn't classify. */
+  outcome: "addressed" | "ignored" | "error";
+}
+
 export interface ActiveLoopDeps {
   /** How the bot replies — wired to the transport's pinned-capable chat send. */
   sendChatMessage: (text: string, opts?: { pinned?: boolean }) => Promise<void>;
@@ -17,6 +34,8 @@ export interface ActiveLoopDeps {
   log?: (msg: string) => void;
   /** Structured feed for the live dashboard (icon + text). */
   onActivity?: (icon: string, text: string) => void;
+  /** Per-wake record for the TUI wake-replay view (classify outcome surfaced). */
+  onWakeEvent?: (ev: WakeEvent) => void;
   /**
    * Tool-enabled brain for in-call repo actions (MVP 4): a `claude -p` running
    * in the repo with gh/git/Write/Edit. Omit to disable repo actions.
@@ -61,7 +80,27 @@ export class ActiveLoop {
     // enqueuedAt is captured BEFORE the chain wait, so the breakdown can show how
     // long a reply sat behind an in-flight one (serialization, not the brain).
     const enqueuedAt = Date.now();
-    this.chain = this.chain.catch(() => {}).then(() => this.handle(utterance, chunk.speaker, enqueuedAt));
+    this.chain = this.chain.catch(() => {}).then(() => this.handle(utterance, chunk.speaker, enqueuedAt, { source: "voice" }));
+  }
+
+  /**
+   * Inject an operator-TYPED "Mex, …" command straight into the active loop,
+   * bypassing STT + wake detection entirely (the TUI's type-to-Mex). The
+   * classifier still runs — so the command routes to answer / log_* / repo_action
+   * the same way a spoken one does — but `addressed` is forced true, since a
+   * deliberately typed command is unambiguously directed at the bot (the brain's
+   * `addressed` flag exists only to reject mis-heard false-positive wakes, which
+   * can't happen here). Serialized on the same chain as spoken wakes.
+   */
+  injectCommand(text: string, speaker = "Operator (typed)"): void {
+    const utterance = text.trim();
+    if (!utterance) return;
+    this.log(`typed command from ${speaker}: "${truncate(utterance, 100)}"`);
+    this.deps.onActivity?.("⌨️", `${speaker}: "${truncate(utterance, 80)}"`);
+    const enqueuedAt = Date.now();
+    this.chain = this.chain
+      .catch(() => {})
+      .then(() => this.handle(utterance, speaker, enqueuedAt, { forceAddressed: true, source: "typed" }));
   }
 
   /** Emit a one-line latency breakdown (only when --timings is on). Auto-totals. */
@@ -72,9 +111,17 @@ export class ActiveLoop {
     this.log(`[timing] ${body}  total≈${total}ms`);
   }
 
-  private async handle(utterance: string, speaker: string, enqueuedAt: number): Promise<void> {
+  private async handle(
+    utterance: string,
+    speaker: string,
+    enqueuedAt: number,
+    opts: { forceAddressed?: boolean; source?: "voice" | "typed" } = {}
+  ): Promise<void> {
     const tStart = Date.now();
     const queueWait = tStart - enqueuedAt;
+    const source = opts.source ?? "voice";
+    const emitWake = (addressed: boolean, action: string, outcome: WakeEvent["outcome"]) =>
+      this.deps.onWakeEvent?.({ ts: Date.now(), speaker, utterance, source, addressed, action, outcome });
     try {
       const repoContext = readMexContext(this.deps.repoRoot, this.deps.mexStatus);
       const repoHistory = readMexEventHistory(this.deps.repoRoot, this.deps.mexStatus);
@@ -102,15 +149,18 @@ export class ActiveLoop {
 
       const out = parseActive(raw);
       if (!out) {
+        emitWake(false, "none", "error");
         this.log("active: could not parse model output — staying silent");
         this.timing(base);
         return;
       }
-      if (!out.addressed) {
+      if (!out.addressed && !opts.forceAddressed) {
+        emitWake(false, out.action, "ignored");
         this.log("wake heard but not actually addressed — staying silent");
         this.timing(base);
         return;
       }
+      emitWake(true, out.action, "addressed");
 
       // Record before replying, so the confirmation is truthful.
       if (out.action === "log_decision" && out.item) this.memory.appendDecisions([out.item]);
@@ -137,6 +187,7 @@ export class ActiveLoop {
         this.log(`action ${out.action} with no message — nothing posted`);
       }
     } catch (err) {
+      emitWake(false, "none", "error");
       this.log(`active invocation failed: ${(err as Error).message}`);
       try {
         await this.deps.sendChatMessage("Mex hit an error handling that — mind repeating it?");
